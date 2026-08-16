@@ -18,3 +18,29 @@
   ((limit :initarg :limit :reader sse-size-limit-exceeded-limit)
    (observed :initarg :observed :reader sse-size-limit-exceeded-observed)
    (kind :initarg :kind :reader sse-size-limit-exceeded-kind)))
+
+(define-condition sse-http-error (sse-error)
+  ((status :initarg :status :reader sse-http-error-status)
+   (headers :initarg :headers :initform nil :reader sse-http-error-headers)))
+
+(define-condition sse-replay-unavailable (sse-error)
+  ((last-event-id :initarg :last-event-id
+                  :reader sse-replay-unavailable-last-event-id)))
+
+(define-condition sse-client-disconnected (sse-error) ())
+
+(defun %sse-call/k (thunk on-success on-error)
+  (unless (functionp thunk)
+    (error 'type-error :datum thunk :expected-type 'function))
+  (unless (functionp on-success)
+    (error 'type-error :datum on-success :expected-type 'function))
+  (unless (functionp on-error)
+    (error 'type-error :datum on-error :expected-type 'function))
+  (let (values failed)
+    (handler-case
+        (setf values (multiple-value-list (funcall thunk)))
+      (error (condition)
+        (setf failed t)
+        (funcall on-error condition)))
+    (unless failed
+      (apply on-success values))))
