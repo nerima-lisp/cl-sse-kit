@@ -78,7 +78,8 @@
             (let ((status (sse-http-error-status condition)))
               (or (= status 408)
                   (= status 429)
-                  (<= 500 status 599))))
+                  (<= 500 status 599)
+                  (member status '(301 302 303 307 308)))))
            ((typep condition 'sse-error) nil)
            (t t)))))
 

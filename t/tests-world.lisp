@@ -975,6 +975,27 @@
               :to-equalp t)
       (expect closed :to-equalp '(:manual))))
 
+  ;; The default retry policy (no :retry-policy supplied) must classify a
+  ;; redirect status as retryable, or the client would permanently stop
+  ;; itself the moment a server redirects, contradicting the documented
+  ;; contract that the host follows the redirect and hands the new response
+  ;; back to the same client.
+  (it "stays resumable after a redirect under the default retry policy"
+    (let ((client (make-http-sse-client)))
+      (signals sse-http-error
+        (start-http-sse-client-response
+         client
+         (test-response
+          :status 307
+          :content-type nil
+          :headers (list
+                    (http-message-kit:make-http-header
+                     "location" "https://example.test/next")))))
+      (expect (http-sse-client-stopped-p client) :to-equalp nil)
+      (start-http-sse-client-response client (test-response))
+      (expect (http-sse-client-connected-p client) :to-equalp t)
+      (stop-http-sse-client client :test)))
+
   (it "reports response body failures through the retry boundary"
     (let* ((errors nil)
           (cancelled 0)

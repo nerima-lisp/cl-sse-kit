@@ -129,7 +129,11 @@ The writer callback receives one complete octet vector per operation. An HTTP
 adapter can apply its own socket backpressure and deadlines around that call.
 For a session shared by multiple producer or heartbeat tasks, pass `:synchronize`;
 it receives a thunk and must execute it under the host application's session lock.
-Event, comment, heartbeat, flush, and close operations use that boundary.
+Event, comment, heartbeat, flush, and close operations use that boundary. The
+`:write-octets` callback runs inside that same boundary, so code that closes,
+unsubscribes, or republishes to this session from within its own write
+callback will re-enter the lock on the same call stack; use a reentrant lock
+for `:synchronize`, or avoid such inline calls, if this pattern applies.
 
 ## Publishing and replay
 

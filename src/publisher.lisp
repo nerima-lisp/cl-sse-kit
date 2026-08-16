@@ -375,11 +375,11 @@ single broken transport cannot poison later broadcasts."
       (let ((session (car failure))
             (condition (cdr failure)))
         (close-http-sse-session session condition)
-        (push failure failures)))
+        (setf failures (nconc failures (list failure)))))
     (dolist (claim claims)
       (destructuring-bind (entry first-event) claim
         (multiple-value-bind (count claim-failures)
             (%sse-publisher-drain-entry publisher entry first-event)
           (incf delivered count)
           (setf failures (nconc failures claim-failures)))))
-    (values delivered (nreverse failures))))
+    (values delivered failures)))

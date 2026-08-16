@@ -164,6 +164,8 @@
 (defun %sse-http-managed-header-p (name)
   (member (string-downcase name)
           '("content-type"
+            "content-length"
+            "transfer-encoding"
             "cache-control"
             "access-control-allow-origin"
             "access-control-allow-credentials"

@@ -36,7 +36,11 @@
     (error 'type-error :datum on-success :expected-type 'function))
   (unless (functionp on-error)
     (error 'type-error :datum on-error :expected-type 'function))
-  (handler-case
-      (multiple-value-call on-success (funcall thunk))
-    (error (condition)
-      (funcall on-error condition))))
+  (let (values failed)
+    (handler-case
+        (setf values (multiple-value-list (funcall thunk)))
+      (error (condition)
+        (setf failed t)
+        (funcall on-error condition)))
+    (unless failed
+      (apply on-success values))))

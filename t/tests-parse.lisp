@@ -62,6 +62,15 @@
              (first (parse-http-sse-events (lf "retry: soon" "data: x" ""))))
             :to-equalp nil))
 
+  ;; A block that never dispatches (e.g. a standalone keep-alive comment)
+  ;; must not leak its comments, event name, id, or retry into whichever
+  ;; event is dispatched next.
+  (it "does not leak a comment-only block's fields into the next event"
+    (let ((events (parse-http-sse-events
+                   (lf ": keep-alive" "" "data: two" ""))))
+      (expect (length events) :to-equalp 1)
+      (expect (http-sse-event-comments (first events)) :to-equalp nil)))
+
   (it "accepts a retry value beyond the fixnum range"
     (let ((digits (make-string 128 :initial-element #\9)))
       (let ((retry

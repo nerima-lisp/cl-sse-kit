@@ -61,7 +61,7 @@
         system: pkgs: {
           default = pkgs.stdenvNoCC.mkDerivation {
             pname = "cl-sse-kit";
-            version = "0.3.0";
+            version = "1.0.0";
             src = self;
             dontBuild = true;
             installPhase = ''
