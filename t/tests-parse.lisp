@@ -60,7 +60,18 @@
   (it "ignores a non-numeric retry"
     (expect (http-sse-event-retry
              (first (parse-http-sse-events (lf "retry: soon" "data: x" ""))))
-            :to-equalp nil)))
+            :to-equalp nil))
+
+  (it "accepts a retry value beyond the fixnum range"
+    (let ((digits (make-string 128 :initial-element #\9)))
+      (let ((retry
+              (http-sse-event-retry
+               (first (parse-http-sse-events
+                       (lf (concatenate 'string "retry: " digits)
+                           "data: x"
+                           ""))))))
+        (expect (integerp retry) :to-equalp t)
+        (expect retry :to-equalp (parse-integer digits))))))
 
 (describe "parser limits"
   (it "rejects more events than max-events allows"
@@ -73,4 +84,10 @@
 
   (it "rejects accumulated data larger than max-data-bytes"
     (signals sse-size-limit-exceeded
-      (parse-http-sse-events (lf "data: aaaaaaaaaa" "") :max-data-bytes 4))))
+      (parse-http-sse-events (lf "data: aaaaaaaaaa" "") :max-data-bytes 4)))
+
+  (it "counts UTF-8 octets before accepting string chunks"
+    (signals sse-size-limit-exceeded
+      (feed-http-sse-parser
+       (make-http-sse-parser :max-input-bytes 3)
+       "éé"))))

@@ -22,7 +22,13 @@
              (first (parse-http-sse-events
                      (serialize-http-sse-event
                       (make-http-sse-event :data (format nil "a~%b"))))))
-            :to-equalp (format nil "a~%b"))))
+            :to-equalp (format nil "a~%b")))
+
+  (it "rejects character output streams"
+    (signals sse-error
+      (write-http-sse-event
+       (make-http-sse-event :data "x")
+       (make-string-output-stream)))))
 
 (describe "make-http-sse-event"
   ;; A field value carrying a line break would terminate the field early on
@@ -30,4 +36,10 @@
   ;; construction rather than escaped at serialization.
   (it "rejects an event name containing a line break"
     (signals sse-error
-      (make-http-sse-event :event (format nil "a~%b") :data "x"))))
+      (make-http-sse-event :event (format nil "a~%b") :data "x")))
+
+  (it "rejects circular comment lists"
+    (let ((comments (list "cycle")))
+      (setf (cdr comments) comments)
+      (signals sse-error
+        (make-http-sse-event :data "x" :comments comments)))))

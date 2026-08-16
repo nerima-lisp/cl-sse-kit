@@ -1,7 +1,6 @@
 (defpackage #:sse-kit
   (:use #:cl)
   (:export
-   ;; Conditions
    #:sse-error
    #:sse-error-message
    #:sse-error-operation
@@ -10,16 +9,125 @@
    #:sse-size-limit-exceeded-limit
    #:sse-size-limit-exceeded-observed
    #:sse-size-limit-exceeded-kind
-   ;; Event values
+   #:sse-http-error
+   #:sse-http-error-status
+   #:sse-http-error-headers
+   #:sse-replay-unavailable
+   #:sse-replay-unavailable-last-event-id
+   #:sse-client-disconnected
    #:http-sse-event
    #:http-sse-event-p
    #:make-http-sse-event
    #:http-sse-event-event
    #:http-sse-event-data
    #:http-sse-event-id
+   #:http-sse-event-last-event-id
    #:http-sse-event-retry
    #:http-sse-event-comments
-   ;; Parsing and serialization
+   #:+http-sse-default-max-events+
+   #:+http-sse-default-max-line-bytes+
+   #:+http-sse-default-max-data-bytes+
+   #:+http-sse-default-max-comments+
+   #:+http-sse-default-max-comment-bytes+
+   #:+http-sse-default-max-input-bytes+
+   #:+http-sse-max-read-buffer-size+
+   #:make-http-sse-parser
+   #:http-sse-parser-p
+   #:feed-http-sse-parser
+   #:feed-http-sse-parser/k
+   #:finish-http-sse-parser
+   #:finish-http-sse-parser/k
+   #:http-sse-parser-last-event-id
+   #:http-sse-parser-retry
+   #:http-sse-parser-event-count
+   #:http-sse-parser-events
+   #:http-sse-parser-finished-p
    #:parse-http-sse-events
    #:read-http-sse-events
-   #:serialize-http-sse-event))
+   #:with-http-sse-parser
+   #:serialize-http-sse-event
+   #:write-http-sse-event
+   #:http-sse-content-type-valid-p
+   #:make-http-sse-response
+   #:make-http-sse-response-stream
+   #:http-sse-request-valid-p
+   #:validate-http-sse-request
+   #:http-sse-request-last-event-id
+   #:make-http-sse-session
+   #:http-sse-session-p
+   #:http-sse-session-response
+   #:http-sse-session-open-p
+   #:http-sse-session-closed-p
+   #:http-sse-session-bytes-written
+   #:http-sse-session-event-count
+   #:http-sse-session-close-reason
+   #:http-sse-session-close-error
+   #:http-sse-session-max-output-bytes
+   #:http-sse-session-synchronize
+   #:http-sse-session-heartbeat-interval
+   #:http-sse-session-heartbeat-count
+   #:http-sse-session-heartbeat-last-at
+   #:http-sse-session-heartbeat-due-p
+   #:send-http-sse-heartbeat
+   #:send-http-sse-event
+   #:send-http-sse-event/k
+   #:send-http-sse-comment
+   #:send-http-sse-comment/k
+   #:flush-http-sse-session
+   #:flush-http-sse-session/k
+   #:close-http-sse-session
+   #:close-http-sse-session/k
+   #:with-http-sse-session
+   #:make-http-sse-publisher
+   #:http-sse-publisher-p
+   #:http-sse-publisher-max-history
+   #:http-sse-publisher-max-queue
+   #:http-sse-publisher-history
+   #:http-sse-publisher-oldest-event-id
+   #:http-sse-publisher-newest-event-id
+   #:http-sse-publisher-session-count
+   #:subscribe-http-sse-session
+   #:unsubscribe-http-sse-session
+   #:publish-http-sse-event
+   #:+http-sse-client-connecting+
+   #:+http-sse-client-open+
+   #:+http-sse-client-closed+
+   #:make-http-sse-client
+   #:http-sse-client-p
+   #:http-sse-client-url
+   #:http-sse-client-on-event
+   #:http-sse-client-on-open
+   #:http-sse-client-on-error
+   #:http-sse-client-on-close
+   #:http-sse-client-on-retry
+   #:http-sse-client-on-redirect
+   #:http-sse-client-cancel-transport
+   #:http-sse-client-ready-state
+   #:http-sse-client-retry-policy
+   #:http-sse-client-retry-forever-p
+   #:http-sse-client-request-headers
+   #:http-sse-client-retry-after-delay
+   #:http-sse-client-transport-cancelled-p
+   #:http-sse-client-transport-cancel-error
+   #:http-sse-client-callback-error
+   #:make-http-sse-client-request
+   #:start-http-sse-client-response
+   #:start-http-sse-client-response/k
+   #:consume-http-sse-client-response
+   #:consume-http-sse-client-response/k
+   #:feed-http-sse-client
+   #:feed-http-sse-client/k
+   #:finish-http-sse-client-response
+   #:finish-http-sse-client-response/k
+   #:read-http-sse-client-response
+   #:stop-http-sse-client
+   #:stop-http-sse-client/k
+   #:with-http-sse-client
+   #:http-sse-client-connected-p
+   #:http-sse-client-stopped-p
+   #:http-sse-client-last-event-id
+   #:http-sse-client-retry-delay-override
+   #:http-sse-client-retry-attempt
+   #:http-sse-client-next-retry-delay
+   #:http-sse-client-response
+   #:http-sse-client-parser))
