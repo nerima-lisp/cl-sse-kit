@@ -215,6 +215,26 @@ triggered the notification. `:on-event` remains part of the body-processing
 operation, so its conditions propagate through `feed-http-sse-client` and the
 corresponding read/consume operation.
 
+## Transport adapter checklist
+
+The library intentionally stops at the HTTP message and byte-stream boundary.
+An adapter that connects it to a web server or HTTP client should:
+
+1. Validate incoming metadata with `validate-http-sse-request` before creating a
+   session.
+2. Return `make-http-sse-response` (or
+   `make-http-sse-response-stream`) and route body writes through a binary
+   transport.
+3. Register sessions with `make-http-sse-publisher` when replay or broadcast is
+   required, and call `publish-http-sse-event` from the application producer.
+4. Pass each received body chunk to `feed-http-sse-client` or use
+   `read-http-sse-client-response`; schedule retry attempts from `:on-retry`.
+5. Keep ownership of sockets, TLS, request lifetimes, timers, redirect
+   requests, backpressure, partial writes, and application-level locks.
+
+This separation keeps the protocol state portable across HTTP servers and
+clients while making transport policy explicit at one integration boundary.
+
 ## Limits and errors
 
 Parser, serializer, session, publisher, and client APIs expose bounded
