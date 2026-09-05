@@ -76,7 +76,7 @@ event. Use `write-http-sse-event` for one complete event sent to a binary stream
 or transport callback. `:max-bytes` can bound serialized output.
 
 The `/k` entry points and `with-http-sse-parser` macro expose continuation-style
-success and error paths without introducing an adapter layer.
+success and error paths.
 
 ## HTTP response and server sessions
 
@@ -235,9 +235,6 @@ An adapter that connects it to a web server or HTTP client should:
    `read-http-sse-client-response`; schedule retry attempts from `:on-retry`.
 5. Keep ownership of sockets, TLS, request lifetimes, timers, redirect
    requests, backpressure, partial writes, and application-level locks.
-
-This separation keeps the protocol state portable across HTTP servers and
-clients while making transport policy explicit at one integration boundary.
 
 ## Limits and errors
 
