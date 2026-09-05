@@ -5,9 +5,9 @@ protocol. It provides the wire parser and serializer, incremental stream
 state, HTTP metadata validation, bounded server sessions, replay history, and
 transport-neutral client reconnection state.
 
-The transport boundary is explicit: an HTTP server or client owns sockets,
-request lifetimes, timers, backpressure, and partial writes. This library
-operates directly on `cl-http-message-kit:http-response`,
+HTTP servers and clients own sockets, request lifetimes, timers, backpressure,
+and partial writes. This library operates directly on
+`cl-http-message-kit:http-response`,
 `cl-http-message-kit:http-header`, octet vectors, and callbacks.
 
 ## Install
@@ -36,8 +36,8 @@ specification](https://html.spec.whatwg.org/multipage/server-sent-events.html):
 - `retry` persists as the reconnection delay and accepts only ASCII digits;
 - strict EOF discards an unterminated event.
 
-There is one strict parsing contract. Both `parse-http-sse-events` and
-`finish-http-sse-parser` discard an event that has not ended with a blank line.
+At strict EOF, `parse-http-sse-events` and `finish-http-sse-parser` discard an
+event that has not ended with a blank line.
 
 ## Parsing and serialization
 
@@ -171,9 +171,9 @@ through `http-sse-publisher-max-history`.
                :retry-policy
                (resilience-kit:make-retry-policy
                 :max-attempts 8
-               :initial-delay 1d0
-               :max-delay 30d0
-               :retry-safe-p t)
+                :initial-delay 1d0
+                :max-delay 30d0
+                :retry-safe-p t)
                :initial-last-event-id persisted-cursor
                :on-event #'handle-event
                :on-error #'handle-error
@@ -206,10 +206,10 @@ transport at most once and transitions the client to `CLOSED`.
 
 `read-http-sse-client-response` requires `:element-type :octets` for a binary
 octet stream and `:element-type :characters` for a character stream; mismatched
-input is rejected before reading. Transport body read failures and invalid body chunks follow the same error,
-retry, cancellation, and close path as parser failures. The client does not
-open sockets or follow redirects itself; the host owns those transport
-operations and supplies the next response.
+input is rejected before reading. Transport body read failures and invalid body
+chunks follow the same error, retry, cancellation, and close path as parser
+failures. The client does not open sockets or follow redirects itself; the host
+owns those transport operations and supplies the next response.
 
 Lifecycle notification callbacks (`:on-open`, `:on-error`, `:on-close`,
 `:on-retry`, and `:on-redirect`) are isolated from protocol failures: a
@@ -221,7 +221,7 @@ corresponding read/consume operation.
 
 ## Transport adapter checklist
 
-The library intentionally stops at the HTTP message and byte-stream boundary.
+Integrations stop at the HTTP message and byte-stream boundary.
 An adapter that connects it to a web server or HTTP client should:
 
 1. Validate incoming metadata with `validate-http-sse-request` before creating a
