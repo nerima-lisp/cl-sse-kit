@@ -16,26 +16,12 @@ The project is tested with ASDF and Nix. The runtime dependencies are:
 
 - `nerima-lisp/cl-codec-kit` 0.5.0 for UTF-8 conversion with replacement of malformed octets;
 - `nerima-lisp/cl-http-message-kit` for HTTP request/response values;
-- `nerima-lisp/cl-resilience-kit` 1.0.0 for retry policy and backoff.
-
-Test and coverage commands additionally use `nerima-lisp/cl-weave` 1.3.0.
-
-For a pinned development environment containing these dependency packages,
-run `nix develop` from the repository root before loading the system through
-ASDF:
-
-```shell
-nix develop
-```
+- `nerima-lisp/cl-resilience-kit` 1.0.0 for retry policy and backoff;
+- `nerima-lisp/cl-weave` 1.3.0 for tests and coverage.
 
 ```lisp
 (asdf:load-system "cl-sse-kit")
 ```
-
-Outside Nix, make the runtime dependencies available to ASDF through your
-usual source configuration before loading the system. Code examples use
-placeholders such as `adapter-*`, `body-chunk`, and `response`; replace them
-with values supplied by your application or transport adapter.
 
 ## Standards model
 
@@ -66,10 +52,6 @@ There is one strict parsing contract. Both `parse-http-sse-events` and
   (sse-kit:finish-http-sse-parser parser))
 ```
 
-In this incremental example, `body-chunk` represents each chunk supplied by
-the host transport. Call `feed-http-sse-parser` for every chunk and call
-`finish-http-sse-parser` once after the transport reaches EOF.
-
 `feed-http-sse-parser` accepts a string or an unsigned-byte octet vector, with
 optional `:start` and `:end` bounds. Chunks may split a UTF-8 code point or a
 CRLF pair. The parser exposes the persistent cursor, retry delay, event count,
@@ -79,7 +61,7 @@ For one-shot parsing and serialization:
 
 ```lisp
 (sse-kit:parse-http-sse-events
- (format nil "event: greet~%data: hello~%data: world~%id: 7~%~%"))
+ "event: greet\ndata: hello\ndata: world\nid: 7\n\n")
 
 (sse-kit:serialize-http-sse-event
  (sse-kit:make-http-sse-event :event "greet" :data "hello" :id "7"))
@@ -93,6 +75,9 @@ strictly. Both it and `parse-http-sse-events` accept
 event. Use `write-http-sse-event` for one complete event sent to a binary stream
 or transport callback. `:max-bytes` can bound serialized output.
 
+The `/k` entry points and `with-http-sse-parser` macro expose continuation-style
+success and error paths without introducing an adapter layer.
+
 ## HTTP response and server sessions
 
 ```lisp
@@ -102,9 +87,7 @@ or transport callback. `:max-bytes` can bound serialized output.
        (session
          (sse-kit:make-http-sse-session
           :response response
-          :write-octets #'adapter-write-octets
-          :flush #'adapter-flush
-          :close #'adapter-close
+          :write-octets #'write-one-octet-vector
           :max-output-bytes (* 8 1024 1024))))
   (sse-kit:send-http-sse-event
    session
@@ -112,12 +95,6 @@ or transport callback. `:max-bytes` can bound serialized output.
   (sse-kit:send-http-sse-comment session "heartbeat")
   (sse-kit:flush-http-sse-session session))
 ```
-
-`adapter-write-octets`, `adapter-flush`, and `adapter-close` are callbacks
-supplied by the host HTTP adapter. A writer-backed session does not infer
-`flush` or `close` operations; provide them when the transport needs those
-operations. A stream-backed session can derive those operations from its
-binary stream.
 
 `make-http-sse-response` supplies the SSE content type and no-cache policy and
 manages optional CORS and proxy-buffering headers. An explicit non-wildcard
@@ -194,10 +171,9 @@ through `http-sse-publisher-max-history`.
                :retry-policy
                (resilience-kit:make-retry-policy
                 :max-attempts 8
-                :initial-delay 1d0
-                :max-delay 30d0
-                :retry-safe-p t)
-               :retry-forever-p nil
+               :initial-delay 1d0
+               :max-delay 30d0
+               :retry-safe-p t)
                :initial-last-event-id persisted-cursor
                :on-event #'handle-event
                :on-error #'handle-error
@@ -231,7 +207,9 @@ transport at most once and transitions the client to `CLOSED`.
 `read-http-sse-client-response` requires `:element-type :octets` for a binary
 octet stream and `:element-type :characters` for a character stream; mismatched
 input is rejected before reading. Transport body read failures and invalid body chunks follow the same error,
-retry, cancellation, and close path as parser failures.
+retry, cancellation, and close path as parser failures. The client does not
+open sockets or follow redirects itself; the host owns those transport
+operations and supplies the next response.
 
 Lifecycle notification callbacks (`:on-open`, `:on-error`, `:on-close`,
 `:on-retry`, and `:on-redirect`) are isolated from protocol failures: a
@@ -258,11 +236,15 @@ An adapter that connects it to a web server or HTTP client should:
 5. Keep ownership of sockets, TLS, request lifetimes, timers, redirect
    requests, backpressure, partial writes, and application-level locks.
 
+This separation keeps the protocol state portable across HTTP servers and
+clients while making transport policy explicit at one integration boundary.
+
 ## Limits and errors
 
-Parser limits include total input, line, data, comment, and event budgets.
-`sse-size-limit-exceeded` provides `limit`, `observed`, and `kind` slots.
-Protocol and HTTP failures use `sse-error` or its specialized
+Parser, serializer, session, publisher, and client APIs expose bounded
+operations. Parser limits include total input, line, data, comment, and event
+budgets. `sse-size-limit-exceeded` provides `limit`, `observed`, and `kind`
+slots. Protocol and HTTP failures use `sse-error` or its specialized
 conditions, so adapters can distinguish malformed input, an unavailable
 replay cursor, an invalid HTTP response, a stopped client, a disconnect, and
 a resource limit without parsing error strings.
@@ -297,7 +279,7 @@ nix run .#coverage
 | HTTP | `make-http-sse-response`, `make-http-sse-response-stream`, `validate-http-sse-request`, `http-sse-request-last-event-id`, `http-sse-content-type-valid-p` |
 | Server | `make-http-sse-session`, send/comment/heartbeat/flush/close operations |
 | Broadcast | `make-http-sse-publisher`, history/queue accessors, subscribe/unsubscribe/publish operations |
-| Client | `make-http-sse-client`, `http-sse-client-callback-error`, request/response/feed/finish/stop operations |
+| Client | `make-http-sse-client`, request/response/feed/finish/stop operations |
 | Conditions | `sse-error`, `sse-size-limit-exceeded`, `sse-http-error`, `sse-replay-unavailable`, client lifecycle conditions |
 
 ## License
