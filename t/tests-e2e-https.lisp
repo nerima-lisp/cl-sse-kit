@@ -231,8 +231,9 @@
                              :to-equalp "2")
                      (funcall join-server)
                      (setf join-server nil)
-                     (expect (some (lambda (request)
-                                     (search "Last-Event-ID: 1" request))
+                             (expect (some (lambda (request)
+                                     (search "last-event-id: 1"
+                                             (string-downcase request)))
                                    requests)
                              :to-equalp t)))
             (when join-server
