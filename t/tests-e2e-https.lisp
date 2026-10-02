@@ -1,5 +1,6 @@
 #+sbcl
-(require :sb-bsd-sockets)
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (require :sb-bsd-sockets))
 
 (in-package #:sse-kit/test)
 
