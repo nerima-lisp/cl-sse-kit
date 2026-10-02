@@ -214,6 +214,7 @@
               clWeave
             ];
             text = ''
+              export SBCL_HOME="${pkgs.sbcl}/lib/sbcl"
               export CL_SOURCE_REGISTRY='(:source-registry :ignore-inherited-configuration)'
               timeout --signal=TERM --kill-after=15s 300s \
                 cl-weave run cl-sse-kit/test \
