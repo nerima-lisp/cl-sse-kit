@@ -144,9 +144,10 @@
              (responses
                (list
                 (map '(vector (unsigned-byte 8)) #'char-code
-                     ": keepalive\r\nevent: update\r\nid: 1\r\nretry: 25\r\ndata: first\r\ndata: line\r\n\r\n")
+                     (crlf ": keepalive" "event: update" "id: 1"
+                            "retry: 25" "data: first" "data: line" ""))
                 (map '(vector (unsigned-byte 8)) #'char-code
-                     "event: update\r\nid: 2\r\ndata: resumed\r\n\r\n")))
+                     (crlf "event: update" "id: 2" "data: resumed" ""))))
              (requests nil)
              (process nil)
              (server-thread nil)
@@ -201,7 +202,8 @@
                       (%e2e-http-message-response response)))
                    (let ((event (first events)))
                      (expect (http-sse-event-event event) :to-equalp "update")
-                     (expect (http-sse-event-data event) :to-equalp "first\nline")
+                     (expect (http-sse-event-data event)
+                             :to-equalp (format nil "first~%line"))
                      (expect (http-sse-event-id event) :to-equalp "1"))
                    (expect (http-sse-client-last-event-id sse-client)
                            :to-equalp "1")
@@ -225,8 +227,9 @@
                              :to-equalp "2")
                      (funcall join-server)
                      (setf join-server nil)
-                     (expect (not (null (search "Last-Event-ID: 1"
-                                                 (first requests))))
+                     (expect (some (lambda (request)
+                                     (search "Last-Event-ID: 1" request))
+                                   requests)
                              :to-equalp t)))
             (when join-server
               (ignore-errors (funcall join-server)))
