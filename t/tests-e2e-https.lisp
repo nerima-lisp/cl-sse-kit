@@ -234,7 +234,8 @@
                      (expect (some (lambda (request)
                                      (let ((request (string-downcase request)))
                                        (and (search "last-event-id" request)
-                                            (search "1" request))))
+                                            (search "1" request)
+                                            t)))
                                    (car requests))
                              :to-equalp t)))
             (when join-server
