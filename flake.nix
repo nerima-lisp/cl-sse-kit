@@ -332,26 +332,20 @@
                 ];
               }
               ''
-                    cp -r ${self} source
-                    cd source
+                cp -r ${self} source
+                cd source
                 export HOME="$TMPDIR/cl-sse-kit-home"
                 mkdir -p "$HOME"
+                export SBCL_HOME="${pkgs.sbcl}/lib/sbcl"
                 export CL_SOURCE_REGISTRY='(:source-registry :ignore-inherited-configuration)'
-                set +e
                 cl-weave run cl-sse-kit/test \
-                      --reporter spec \
-                      --max-workers 1 \
-                      --test-timeout-ms 300000 \
+                  --reporter spec \
+                  --max-workers 1 \
+                  --test-timeout-ms 300000 \
                   --fail-with-no-tests \
                   ${asdLoadOptions} \
-                  --load "$PWD/t/load-local-system.asd" \
-                  > "$TMPDIR/cl-sse-kit-test.log" 2>&1
-                test_status=$?
-                if [ "$test_status" -ne 0 ]; then
-                  grep -n -E 'Package|ERROR|Error|undefined|not found|reader|fatal|does not exist|unbound' "$TMPDIR/cl-sse-kit-test.log" | head -40 || true
-                  exit "$test_status"
-                fi
-                    touch "$out"
+                  --load "$PWD/t/load-local-system.asd"
+                touch "$out"
               '';
         }
       );
