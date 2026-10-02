@@ -1,3 +1,6 @@
+#+sbcl
+(require :sb-bsd-sockets)
+
 (in-package #:sse-kit/test)
 
 #+sbcl
