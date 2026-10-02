@@ -231,12 +231,12 @@
                              :to-equalp "2")
                      (funcall join-server)
                      (setf join-server nil)
-                     (expect (some (lambda (request)
+                     (unless (some (lambda (request)
                                      (let ((request (string-downcase request)))
                                        (and (search "last-event-id" request)
                                             (search "1" request))))
                                    requests)
-                             :to-equalp t)))
+                       (error "Captured HTTPS requests: ~S" requests))))
             (when join-server
               (ignore-errors (funcall join-server)))
             (when (and process
