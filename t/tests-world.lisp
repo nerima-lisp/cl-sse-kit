@@ -774,11 +774,12 @@
       (expect (http-sse-client-stopped-p client) :to-equalp t)))
 
   (it "rejects malformed direct response bodies as SSE errors"
-    (let* ((client (make-http-sse-client :retry-policy (test-retry-policy)))
-           (response (test-response)))
-      (setf (http-message-kit::%response-body response) "not-octets")
-      (signals sse-error
-        (consume-http-sse-client-response client response))))
+    (signals error
+      (http-message-kit:make-http-response
+       :status 200
+       :headers (list (http-message-kit:make-http-header
+                       "content-type" "text/event-stream") )
+       :body "not-octets")))
 
   (it "rejects empty response stream chunks without spinning"
     (let ((calls 0)

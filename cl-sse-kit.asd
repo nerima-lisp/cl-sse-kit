@@ -4,9 +4,10 @@
   :description "HTTP Server-Sent Events parser, serializer, session, publisher, and client protocol state."
   :author "nerima-lisp"
   :license "MIT"
-  :version "1.0.0"
+  :version "1.1.0"
   :depends-on ("cl-codec-kit"
                "cl-http-message-kit"
+               "cl-http-kit"
                "cl-resilience-kit")
   :pathname "src"
   :serial t
@@ -28,6 +29,10 @@
   :depends-on ("cl-sse-kit"
                "cl-codec-kit"
                "cl-http-message-kit"
+               "cl-http-kit"
+               "cl-http-kit/client"
+               "cl-http-kit/network"
+               "cl-http-kit/tls"
                "cl-resilience-kit"
                "cl-weave")
   :pathname "t"
@@ -36,6 +41,7 @@
                (:file "tests-parse")
                (:file "tests-serialize")
                (:file "tests-world")
+               (:file "tests-e2e-https")
                (:file "runner"))
   :perform (asdf:test-op (op c)
              (declare (ignore op c))

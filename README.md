@@ -15,7 +15,8 @@ and partial writes. This library operates directly on
 The project is tested with ASDF and Nix. The runtime dependencies are:
 
 - `nerima-lisp/cl-codec-kit` 0.5.0 for UTF-8 conversion with replacement of malformed octets;
-- `nerima-lisp/cl-http-message-kit` for HTTP request/response values;
+- `nerima-lisp/cl-http-message-kit` for HTTP request/response values and
+  `nerima-lisp/cl-http-kit` for network transport;
 - `nerima-lisp/cl-resilience-kit` 1.0.0 for retry policy and backoff;
 - `nerima-lisp/cl-weave` 1.3.0 for tests and coverage.
 
