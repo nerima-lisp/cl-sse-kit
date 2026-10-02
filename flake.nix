@@ -311,45 +311,41 @@
           asdLoadOptions = builtins.concatStringsSep " " (map (path: "--load ${path}") asdFiles);
         in
         {
-          test = pkgs.runCommand "cl-sse-kit-test" {
-            nativeBuildInputs = [
-              pkgs.sbcl
-              pkgs.coreutils
-              pkgs.openssl
-              clWeave
-              clCodec
-              clHttpMessage
-              clHttpKit
-              clDeflate
-              clTls
-              clResilience
-              clBoundary
-              clConcurrent
-              clDate
-              clHost
-            ];
-          } ''
-            cp -r ${self} source
-            cd source
-            export HOME="$TMPDIR/cl-sse-kit-home"
-            mkdir -p "$HOME"
-            export CL_SOURCE_REGISTRY='(:source-registry :ignore-inherited-configuration)'
-            set +e
-            cl-weave run cl-sse-kit/test \
-              --reporter spec \
-              --max-workers 1 \
-              --test-timeout-ms 300000 \
-              --fail-with-no-tests \
-              ${asdLoadOptions} \
-              --load "$PWD/t/load-local-system.asd" \
-              > "$TMPDIR/cl-sse-kit-test.log" 2>&1
-            test_status=$?
-            if [ "$test_status" -ne 0 ]; then
-              grep -E 'ERROR|Error|undefined|not found|reader|fatal' "$TMPDIR/cl-sse-kit-test.log" || true
-              exit "$test_status"
-            fi
-            touch "$out"
-          '';
+          test =
+            pkgs.runCommand "cl-sse-kit-test"
+              {
+                nativeBuildInputs = [
+                  pkgs.sbcl
+                  pkgs.coreutils
+                  pkgs.openssl
+                  clWeave
+                  clCodec
+                  clHttpMessage
+                  clHttpKit
+                  clDeflate
+                  clTls
+                  clResilience
+                  clBoundary
+                  clConcurrent
+                  clDate
+                  clHost
+                ];
+              }
+              ''
+                cp -r ${self} source
+                cd source
+                export HOME="$TMPDIR/cl-sse-kit-home"
+                mkdir -p "$HOME"
+                export CL_SOURCE_REGISTRY='(:source-registry :ignore-inherited-configuration)'
+                cl-weave run cl-sse-kit/test \
+                  --reporter spec \
+                  --max-workers 1 \
+                  --test-timeout-ms 300000 \
+                  --fail-with-no-tests \
+                  ${asdLoadOptions} \
+                  --load "$PWD/t/load-local-system.asd"
+                touch "$out"
+              '';
         }
       );
     };
