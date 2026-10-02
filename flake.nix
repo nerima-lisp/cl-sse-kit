@@ -331,6 +331,8 @@
           } ''
             cp -r ${self} source
             cd source
+            export HOME="$PWD/.home"
+            mkdir -p "$HOME"
             export CL_SOURCE_REGISTRY='(:source-registry :ignore-inherited-configuration)'
             cl-weave run cl-sse-kit/test \
               --reporter spec \
