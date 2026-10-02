@@ -11,6 +11,63 @@
 
     cl-http-message-kit = {
       url = "github:nerima-lisp/cl-http-message-kit";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-weave.follows = "cl-weave";
+      inputs.paredit-cli.follows = "paredit-cli";
+    };
+
+    cl-http-kit = {
+      url = "github:nerima-lisp/cl-http-kit/land/main-catchup";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-codec-kit.follows = "cl-codec-kit";
+      inputs.cl-boundary-kit.follows = "cl-boundary-kit";
+      inputs.cl-concurrent-kit.follows = "cl-concurrent-kit";
+      inputs.cl-crypto-kit.follows = "cl-crypto-kit";
+      inputs.cl-date-kit.follows = "cl-date-kit";
+      inputs.cl-deflate-kit.follows = "cl-deflate-kit";
+      inputs.cl-host-kit.follows = "cl-host-kit";
+      inputs.cl-observability-kit.follows = "cl-observability-kit";
+      inputs.cl-tls-kit.follows = "cl-tls-kit";
+      inputs.cl-weave.follows = "cl-weave";
+      inputs.paredit-cli.follows = "paredit-cli";
+      inputs.treefmt-nix.follows = "treefmt-nix";
+    };
+
+    cl-crypto-kit = {
+      url = "github:nerima-lisp/cl-crypto-kit/takeokunn-crypto-integration";
+      flake = false;
+    };
+
+    cl-deflate-kit = {
+      url = "github:nerima-lisp/cl-deflate-kit/takeokunn-deflate-core";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-weave.follows = "cl-weave";
+    };
+
+    cl-tls-kit = {
+      url = "github:nerima-lisp/cl-tls-kit/takeokunn-tls13-handshake";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-weave.follows = "cl-weave";
+      inputs.cl-crypto-kit.follows = "cl-crypto-kit";
+    };
+
+    cl-observability-kit = {
+      url = "github:nerima-lisp/cl-observability-kit/v0.1.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-weave.follows = "cl-weave";
+      inputs.cl-concurrent-kit.follows = "cl-concurrent-kit";
+      inputs.cl-boundary-kit.follows = "cl-boundary-kit";
+      inputs.cl-date-kit.follows = "cl-date-kit";
+    };
+
+    paredit-cli = {
+      url = "github:takeokunn/paredit-cli/v1.6.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     cl-resilience-kit = {
@@ -35,6 +92,13 @@
       nixpkgs,
       cl-codec-kit,
       cl-http-message-kit,
+      cl-http-kit,
+      cl-crypto-kit,
+      cl-deflate-kit,
+      cl-tls-kit,
+      cl-observability-kit,
+      paredit-cli,
+      treefmt-nix,
       cl-resilience-kit,
       cl-boundary-kit,
       cl-concurrent-kit,
@@ -61,7 +125,7 @@
         system: pkgs: {
           default = pkgs.stdenvNoCC.mkDerivation {
             pname = "cl-sse-kit";
-            version = "1.0.0";
+            version = "1.1.0";
             src = self;
             dontBuild = true;
             installPhase = ''
@@ -85,6 +149,9 @@
             packages = [
               cl-codec-kit.packages.${system}.default
               cl-http-message-kit.packages.${system}.default
+              cl-http-kit.sourceInfo.outPath
+              cl-deflate-kit.packages.${system}.default
+              cl-tls-kit.packages.${system}.default
               cl-resilience-kit.packages.${system}.default
               cl-boundary-kit.packages.${system}.default
               cl-concurrent-kit.packages.${system}.default
@@ -94,6 +161,7 @@
               pkgs.sbcl
               pkgs.coreutils
               pkgs.perl
+              pkgs.openssl
             ];
           };
         }
@@ -104,6 +172,10 @@
         let
           clCodec = cl-codec-kit.packages.${system}.default;
           clHttpMessage = cl-http-message-kit.packages.${system}.default;
+          clHttpKit = cl-http-kit.sourceInfo.outPath;
+          clCryptoKit = cl-crypto-kit;
+          clDeflate = cl-deflate-kit.packages.${system}.default;
+          clTls = cl-tls-kit.packages.${system}.default;
           clResilience = cl-resilience-kit.packages.${system}.default;
           clBoundary = cl-boundary-kit.packages.${system}.default;
           clConcurrent = cl-concurrent-kit.packages.${system}.default;
@@ -113,6 +185,10 @@
           asdFiles = [
             "${clCodec}/cl-codec-kit.asd"
             "${clHttpMessage}/share/common-lisp/source/cl-http-message-kit/cl-http-message-kit.asd"
+            "${clCryptoKit}/cl-crypto-kit.asd"
+            "${clDeflate}/share/common-lisp/source/cl-deflate-kit/cl-deflate-kit.asd"
+            "${clTls}/share/common-lisp/source/cl-tls-kit/cl-tls-kit.asd"
+            "${clHttpKit}/cl-http-kit.asd"
             "${clDate}/cl-date-kit.asd"
             "${clHost}/cl-host-kit.asd"
             "${clBoundary}/cl-boundary-kit.asd"
@@ -127,6 +203,9 @@
               pkgs.coreutils
               clCodec
               clHttpMessage
+              clHttpKit
+              clDeflate
+              clTls
               clResilience
               clBoundary
               clConcurrent
@@ -153,7 +232,9 @@
               pkgs.sbcl
               pkgs.coreutils
               clCodec
-              clHttpMessage
+              clHttpKit
+              clDeflate
+              clTls
               clResilience
               clBoundary
               clConcurrent
@@ -196,6 +277,70 @@
             type = "app";
             program = "${coverage}/bin/cl-sse-kit-coverage";
           };
+        }
+      );
+
+      checks = forEachSystem (
+        system: pkgs:
+        let
+          clCodec = cl-codec-kit.packages.${system}.default;
+          clHttpMessage = cl-http-message-kit.packages.${system}.default;
+          clHttpKit = cl-http-kit.sourceInfo.outPath;
+          clCryptoKit = cl-crypto-kit;
+          clDeflate = cl-deflate-kit.packages.${system}.default;
+          clTls = cl-tls-kit.packages.${system}.default;
+          clResilience = cl-resilience-kit.packages.${system}.default;
+          clBoundary = cl-boundary-kit.packages.${system}.default;
+          clConcurrent = cl-concurrent-kit.packages.${system}.default;
+          clDate = cl-date-kit.packages.${system}.default;
+          clHost = cl-host-kit.packages.${system}.default;
+          clWeave = cl-weave.packages.${system}.default;
+          asdFiles = [
+            "${clCodec}/cl-codec-kit.asd"
+            "${clHttpMessage}/share/common-lisp/source/cl-http-message-kit/cl-http-message-kit.asd"
+            "${clCryptoKit}/cl-crypto-kit.asd"
+            "${clDeflate}/share/common-lisp/source/cl-deflate-kit/cl-deflate-kit.asd"
+            "${clTls}/share/common-lisp/source/cl-tls-kit/cl-tls-kit.asd"
+            "${clHttpKit}/cl-http-kit.asd"
+            "${clDate}/cl-date-kit.asd"
+            "${clHost}/cl-host-kit.asd"
+            "${clBoundary}/cl-boundary-kit.asd"
+            "${clConcurrent}/cl-concurrent-kit.asd"
+            "${clResilience}/cl-resilience-kit.asd"
+          ];
+          asdLoadOptions = builtins.concatStringsSep " " (map (path: "--load ${path}") asdFiles);
+        in
+        {
+          test = pkgs.runCommand "cl-sse-kit-test" {
+            nativeBuildInputs = [
+              pkgs.sbcl
+              pkgs.coreutils
+              pkgs.openssl
+              clWeave
+              clCodec
+              clHttpMessage
+              clHttpKit
+              clDeflate
+              clTls
+              clResilience
+              clBoundary
+              clConcurrent
+              clDate
+              clHost
+            ];
+          } ''
+            cp -r ${self} source
+            cd source
+            export CL_SOURCE_REGISTRY='(:source-registry :ignore-inherited-configuration)'
+            cl-weave run cl-sse-kit/test \
+              --reporter spec \
+              --max-workers 1 \
+              --test-timeout-ms 300000 \
+              --fail-with-no-tests \
+              ${asdLoadOptions} \
+              --load "$PWD/t/load-local-system.asd"
+            touch "$out"
+          '';
         }
       );
     };

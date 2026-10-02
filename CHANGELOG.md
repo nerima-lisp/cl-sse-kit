@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+Follow cl-http-kit 0.4.0 for client transport while retaining
+cl-http-message-kit for SSE request and response models. Add a loopback HTTPS
+SSE test covering reconnect and Last-Event-ID.
+
 ## 1.0.0
 
 First stable release.
