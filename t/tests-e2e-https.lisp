@@ -117,7 +117,7 @@
                    (dotimes (index (length responses))
                      (let* ((request (%e2e-read-headers output))
                             (request-text (octets-string request)))
-                       (push request-text requests)
+                       (push request-text (car requests))
                        (write-sequence (%e2e-response (nth index responses)) input)
                        (finish-output input)))
                  (error (condition)
@@ -152,7 +152,7 @@
                             "retry: 25" "data: first" "data: line" ""))
                 (map '(vector (unsigned-byte 8)) #'char-code
                      (crlf "event: update" "id: 2" "data: resumed" ""))))
-             (requests nil)
+             (requests (list nil))
              (process nil)
              (server-thread nil)
              (input nil)
@@ -231,12 +231,12 @@
                              :to-equalp "2")
                      (funcall join-server)
                      (setf join-server nil)
-                     (unless (some (lambda (request)
+                     (expect (some (lambda (request)
                                      (let ((request (string-downcase request)))
                                        (and (search "last-event-id" request)
                                             (search "1" request))))
-                                   requests)
-                       (error "Captured HTTPS requests: ~S" requests))))
+                                   (car requests))
+                             :to-equalp t)))
             (when join-server
               (ignore-errors (funcall join-server)))
             (when (and process
