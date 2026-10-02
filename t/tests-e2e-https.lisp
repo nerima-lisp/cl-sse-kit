@@ -1,7 +1,3 @@
-#+sbcl
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (require :sb-bsd-sockets))
-
 (in-package #:sse-kit/test)
 
 #+sbcl
@@ -21,17 +17,6 @@
                           (= (aref bytes (- (length bytes) 2)) 13)
                           (= (aref bytes (- (length bytes) 1)) 10))
                  (return bytes)))))
-
-  (defun %e2e-free-port ()
-    (let ((socket (make-instance 'sb-bsd-sockets:inet-socket
-                                 :type :stream
-                                 :protocol :tcp)))
-      (unwind-protect
-           (progn
-             (sb-bsd-sockets:socket-bind socket #(127 0 0 1) 0)
-             (sb-bsd-sockets:socket-listen socket 1)
-             (nth-value 1 (sb-bsd-sockets:socket-name socket)))
-        (ignore-errors (sb-bsd-sockets:socket-close socket)))))
 
   (defun %e2e-response (body)
     (let ((body-length (length body)))
@@ -144,7 +129,7 @@
              (certificate (namestring (merge-pathnames "server.crt" directory)))
              (key (namestring (merge-pathnames "server.key" directory)))
              (openssl (or (uiop:getenv "OPENSSL") "openssl"))
-             (port (%e2e-free-port))
+             (port 18443)
              (responses
                (list
                 (map '(vector (unsigned-byte 8)) #'char-code
