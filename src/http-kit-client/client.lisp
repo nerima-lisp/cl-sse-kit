@@ -163,8 +163,12 @@ when that request completes or reaches its configured timeout."
            (list :collect-body-p nil
                  :on-body-chunk
                  (lambda (chunk)
+                   (format *error-output* "SSE body chunk: ~D octets~%"
+                           (length chunk))
                    (unless (%subscription-stopped-p* subscription)
                      (sse-kit:feed-http-sse-parser parser chunk)
+                     (format *error-output* "SSE parser event count: ~D~%"
+                             (sse-kit:http-sse-parser-event-count parser))
                      (%sync-parser-state subscription parser)))))
          (timeout-p (%subscription-request-timeout-p subscription)))
     (when timeout-p

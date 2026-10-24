@@ -82,5 +82,6 @@ try:
                 "\r\n",
             ])
             stream.sendall("".join(response).encode("ascii") + body)
+            print(f"Sent {status} response with {len(body)} bytes", file=sys.stderr, flush=True)
 finally:
     listener.close()
