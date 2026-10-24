@@ -68,8 +68,8 @@
                   (list "python3"
                         (namestring
                          (asdf:system-relative-pathname
-                          "cl-sse-kit/http-kit-client/test"
-                          "serve_https.py"))
+                          "cl-sse-kit"
+                          "t/http-kit-client/serve_https.py"))
                         mode certificate key)
                   :output :stream
                   :error-output :stream
