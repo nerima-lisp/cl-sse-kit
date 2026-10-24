@@ -215,10 +215,8 @@ when that request completes or reaches its configured timeout."
   (let* ((protocol-client (%subscription-protocol-client subscription))
          (callback-condition nil)
          (parser
-           (sse-kit:make-http-sse-parser
-            :initial-last-event-id
-            (sse-kit:http-sse-client-last-event-id protocol-client)
-            :on-event
+           (%make-subscription-parser
+            protocol-client
             (lambda (event)
               (handler-case
                   (%dispatch-subscription-event subscription event)
@@ -260,6 +258,12 @@ when that request completes or reaches its configured timeout."
                (values (%make-disconnected-condition) nil))
            (error (condition)
              (values condition nil))))))))
+(defun %make-subscription-parser (protocol-client on-event)
+  (sse-kit:make-http-sse-parser
+   :initial-last-event-id
+   (sse-kit:http-sse-client-last-event-id protocol-client)
+   :on-event on-event
+   :collect-events-p nil))
 
 (defun %retry-delay (protocol-client attempt decision)
   (let* ((policy (sse-kit:http-sse-client-retry-policy protocol-client))

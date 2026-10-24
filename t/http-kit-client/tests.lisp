@@ -456,7 +456,21 @@
               :to-equalp "")
       (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
                subscription)
-              :to-equalp t))))
+              :to-equalp t)))
+  (it "does not retain events in callback subscription parsers"
+    (let* ((protocol-client
+             (sse-kit:make-http-sse-client
+              :url "https://example.test/events"
+              :on-event (lambda (event) (declare (ignore event)))))
+           (events nil)
+           (parser
+             (sse-kit/http-kit-client::%make-subscription-parser
+              protocol-client
+              (lambda (event) (push event events)))))
+      (sse-kit:feed-http-sse-parser parser (format nil "data: one~%~%"))
+      (expect (length events) :to-equalp 1)
+      (expect (sse-kit:http-sse-parser-event-count parser) :to-equalp 1)
+      (expect (sse-kit:http-sse-parser-events parser) :to-equalp nil))))
 
 (defun run-tests ()
   (unless (run-all :reporter :spec

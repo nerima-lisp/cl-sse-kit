@@ -256,6 +256,13 @@ If `handle-event` signals an error, the worker stops without retrying. The
 condition is passed to `on-error` and returned by
 `http-sse-subscription-error`; the event ID is committed only after the
 callback returns successfully.
+The callback adapter does not retain events for later retrieval. Its parser
+handles at most 10,000 dispatched events and 64 MiB of input bytes per response.
+These parser limits are independent of the HTTP client's `:max-body-bytes`
+limit. The client can impose a lower response body limit, while a higher client
+limit does not raise the parser's 64 MiB cap. Crossing a parser limit raises
+`sse-size-limit-exceeded`; `on-error` receives the condition and the retry
+policy decides whether to reconnect.
 The `:timeout` keyword passed to `subscribe-http-sse` overrides the per-request
 timeout; pass `NIL` to remove the relative timeout for a request. Without it,
 the HTTP client's default timeout applies. Set a finite `:max-body-bytes` limit
