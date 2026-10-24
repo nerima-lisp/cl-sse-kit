@@ -256,8 +256,10 @@ If `handle-event` signals an error, the worker stops without retrying. The
 condition is passed to `on-error` and returned by
 `http-sse-subscription-error`; the event ID is committed only after the
 callback returns successfully.
-The callback adapter does not retain events for later retrieval. Its parser
-handles at most 10,000 dispatched events and 64 MiB of input bytes per response.
+The callback adapter configures its parser with `:collect-events-p nil`: each
+event is sent to the callback, and the parser keeps no event history. The
+parser's per-response limits are fixed at 10,000 dispatched events and 64 MiB
+of input bytes; `subscribe-http-sse` does not expose overrides.
 These parser limits are independent of the HTTP client's `:max-body-bytes`
 limit. The client can impose a lower response body limit, while a higher client
 limit does not raise the parser's 64 MiB cap. Crossing a parser limit raises
