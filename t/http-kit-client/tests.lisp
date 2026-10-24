@@ -134,6 +134,11 @@
                           (sse-kit/http-kit-client:stop-http-sse-subscription
                            subscription))
                         (cl-concurrent-kit:signal-semaphore received))
+                      :on-error
+                      (lambda (condition)
+                        (unless (typep condition
+                                       (quote sse-kit:sse-client-disconnected))
+                          (format *error-output* "~&SSE subscription error: ~A~%" condition)))
                       :http-client client
                       :retry-policy (%test-retry-policy)
                       :on-retry (lambda (delay condition)
@@ -197,6 +202,11 @@
                       (lambda (event)
                         (push event events)
                         (cl-concurrent-kit:signal-semaphore received))
+                      :on-error
+                      (lambda (condition)
+                        (unless (typep condition
+                                       (quote sse-kit:sse-client-disconnected))
+                          (format *error-output* "~&SSE subscription error: ~A~%" condition)))
                       :http-client client
                       :retry-policy (%test-retry-policy)
                       :on-retry (lambda (delay condition)
@@ -257,6 +267,11 @@
                         (sse-kit/http-kit-client:stop-http-sse-subscription
                          subscription)
                         (cl-concurrent-kit:signal-semaphore received))
+                      :on-error
+                      (lambda (condition)
+                        (unless (typep condition
+                                       (quote sse-kit:sse-client-disconnected))
+                          (format *error-output* "~&SSE subscription error: ~A~%" condition)))
                       :http-client client
                       :retry-policy (%test-retry-policy)))
                (cl-concurrent-kit:signal-semaphore ready)
