@@ -121,18 +121,15 @@ when that request completes or reaches its configured timeout."
 
 (defun %sync-parser-state (subscription parser)
   (let* ((protocol-client (%subscription-protocol-client subscription))
-         (last-event-id (sse-kit:http-sse-parser-last-event-id parser))
          (retry-ms (sse-kit:http-sse-parser-retry parser)))
-    (cl-concurrent-kit:with-lock-held
-        ((%subscription-lock subscription))
-      (setf (%subscription-last-event-id subscription) last-event-id
-            (sse-kit:http-sse-client-last-event-id protocol-client) last-event-id)
-      (when retry-ms
+    (when retry-ms
+      (cl-concurrent-kit:with-lock-held
+          ((%subscription-lock subscription))
         (let* ((policy (sse-kit:http-sse-client-retry-policy protocol-client))
                (maximum (or (resilience-kit:retry-policy-max-delay policy)
                             31536000d0))
                (limit-ms (ceiling (* maximum 1000d0)))
-               (delay (/ (coerce (min retry-ms limit-ms) 'double-float)
+               (delay (/ (coerce (min retry-ms limit-ms) (quote double-float))
                          1000d0)))
           (setf (sse-kit:http-sse-client-retry-delay-override protocol-client)
                 delay))))

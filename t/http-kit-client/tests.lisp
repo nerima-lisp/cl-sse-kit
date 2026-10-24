@@ -306,7 +306,55 @@
       (expect (search "\"path\":\"/events\"" (second records))
               :to-be-truthy)
       (expect (search "\"cookie\":\"sid=loopback\"" (second records))
-              :to-be-truthy))))
+              :to-be-truthy)))
+  (it "does not reconnect with an ID from an undispatched event"
+    (let ((subscription nil)
+          (ready (cl-concurrent-kit:make-semaphore))
+          (received (cl-concurrent-kit:make-semaphore))
+          (events nil)
+          (request-count 0)
+          (records nil))
+      (multiple-value-bind (ignored server-records)
+          (%call-with-https-server
+           "partial-id"
+           (lambda (port)
+             (let ((client
+                     (%make-test-http-client
+                      (lambda (request attempt)
+                        (declare (ignore request attempt))
+                        (incf request-count)))))
+               (setf subscription
+                     (sse-kit/http-kit-client:subscribe-http-sse
+                      (format nil "https://127.0.0.1:~D/events" port)
+                      (lambda (event)
+                        (push event events)
+                        (unless (cl-concurrent-kit:wait-on-semaphore
+                                 ready :timeout 5)
+                          (error "Subscription startup was not released."))
+                        (sse-kit/http-kit-client:stop-http-sse-subscription
+                         subscription)
+                        (cl-concurrent-kit:signal-semaphore received))
+                      :http-client client
+                      :retry-policy (%test-retry-policy)))
+               (cl-concurrent-kit:signal-semaphore ready)
+               (unless (cl-concurrent-kit:wait-on-semaphore
+                        received :timeout 10)
+                 (error "Timed out waiting for the recovered SSE event."))
+               (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                        subscription :timeout 5)
+                 (error "The stopped subscription worker did not finish."))
+               t)))
+        (declare (ignore ignored))
+        (setf records server-records))
+      (expect (length events) :to-equalp 1)
+      (expect (sse-kit:http-sse-event-data (first events)) :to-equalp "recovered")
+      (expect (sse-kit:http-sse-event-id (first events)) :to-equalp "committed")
+      (expect request-count :to-equalp 2)
+      (expect (length records) :to-equalp 2)
+      (expect (not (search "\"last-event-id\"" (second records))) :to-equalp t)
+      (expect (sse-kit/http-kit-client:http-sse-subscription-last-event-id
+               subscription)
+              :to-equalp "committed"))))
 
 (defun run-tests ()
   (unless (run-all :reporter :spec

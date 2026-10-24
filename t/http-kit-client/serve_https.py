@@ -14,6 +14,10 @@ responses = {
     "stop": [
         (200, "text/event-stream", b"data: once\nid: stop-id\nretry: 1000\n\n", []),
     ],
+    "partial-id": [
+        (200, "text/event-stream", b"id: uncommitted\n", []),
+        (200, "text/event-stream", b"data: recovered\nid: committed\n\n", []),
+    ],
 }
 
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
