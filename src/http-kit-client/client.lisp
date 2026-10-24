@@ -4,7 +4,7 @@
              (:conc-name %subscription-)
              (:constructor %make-http-sse-subscription
                  (&key url client protocol-client on-error on-retry on-redirect
-                       lock condition-variable request-timeout
+                       lock stop-semaphore request-timeout
                        request-timeout-p)))
   url
   client
@@ -13,7 +13,7 @@
   on-retry
   on-redirect
   lock
-  condition-variable
+  stop-semaphore
   thread
   request-timeout
   request-timeout-p
@@ -76,16 +76,19 @@ A request already blocked in cl-http-kit/client cannot be closed through its
 public API. Event dispatch stops at the next body chunk, and the worker exits
 when that request completes or reaches its configured timeout."
   (let ((subscription (%check-subscription subscription))
-        (protocol-client nil))
+        (protocol-client nil)
+        (wake-worker-p nil))
     (cl-concurrent-kit:with-lock-held
         ((%subscription-lock subscription))
       (unless (%subscription-stopped-p subscription)
         (setf (%subscription-stopped-p subscription) t
-              (%subscription-stop-reason subscription) reason))
+              (%subscription-stop-reason subscription) reason
+              wake-worker-p t))
       (setf protocol-client
-            (%subscription-protocol-client subscription))
-      (cl-concurrent-kit:condition-broadcast
-       (%subscription-condition-variable subscription)))
+            (%subscription-protocol-client subscription)))
+    (when wake-worker-p
+      (cl-concurrent-kit:signal-semaphore
+       (%subscription-stop-semaphore subscription)))
     (when protocol-client
       (sse-kit:stop-http-sse-client protocol-client reason))
     subscription))
@@ -310,23 +313,11 @@ when that request completes or reaches its configured timeout."
                        delay condition))
             (not (%subscription-stopped-p* subscription)))))))
 
-(defun %monotonic-seconds ()
-  (/ (get-internal-real-time)
-     (float internal-time-units-per-second 1d0)))
-
 (defun %wait-for-retry (subscription delay)
-  (let ((deadline (+ (%monotonic-seconds) delay))
-        (lock (%subscription-lock subscription))
-        (condition-variable
-          (%subscription-condition-variable subscription)))
-    (cl-concurrent-kit:with-lock-held (lock)
-      (loop
-        for remaining = (- deadline (%monotonic-seconds))
-        while (and (not (%subscription-stopped-p subscription))
-                   (plusp remaining))
-        do (cl-concurrent-kit:condition-wait
-            condition-variable lock :timeout remaining))
-      (not (%subscription-stopped-p subscription)))))
+  (cl-concurrent-kit:wait-on-semaphore
+   (%subscription-stop-semaphore subscription)
+   :timeout delay)
+  (not (%subscription-stopped-p* subscription)))
 
 (defun %subscription-loop (subscription)
   (loop until (%subscription-stopped-p* subscription)
@@ -351,9 +342,7 @@ when that request completes or reaches its configured timeout."
            (stop-http-sse-subscription subscription :error)))
     (cl-concurrent-kit:with-lock-held
         ((%subscription-lock subscription))
-      (setf (%subscription-finished-p subscription) t)
-      (cl-concurrent-kit:condition-broadcast
-       (%subscription-condition-variable subscription))))
+      (setf (%subscription-finished-p subscription) t)))
   :finished)
 
 (defun subscribe-http-sse
@@ -386,9 +375,7 @@ cl-http-kit/client exposes its final response hook after body completion."
             :on-redirect on-redirect
             :lock (cl-concurrent-kit:make-lock
                    :name "cl-sse-kit subscription")
-            :condition-variable
-            (cl-concurrent-kit:make-condition-variable
-             :name "cl-sse-kit retry wait")
+            :stop-semaphore (cl-concurrent-kit:make-semaphore)
             :request-timeout timeout
             :request-timeout-p timeout-p))
          (protocol-client

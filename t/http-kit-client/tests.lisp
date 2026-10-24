@@ -470,7 +470,17 @@
       (sse-kit:feed-http-sse-parser parser (format nil "data: one~%~%"))
       (expect (length events) :to-equalp 1)
       (expect (sse-kit:http-sse-parser-event-count parser) :to-equalp 1)
-      (expect (sse-kit:http-sse-parser-events parser) :to-equalp nil))))
+      (expect (sse-kit:http-sse-parser-events parser) :to-equalp nil)))
+  (it "keeps the subscription lock available after a timed retry wait"
+    (let ((subscription
+            (sse-kit/http-kit-client::%make-http-sse-subscription
+             :lock (cl-concurrent-kit:make-lock)
+             :stop-semaphore (cl-concurrent-kit:make-semaphore))))
+      (expect (sse-kit/http-kit-client::%wait-for-retry subscription 0.001d0)
+              :to-equalp t)
+      (expect (sse-kit/http-kit-client:http-sse-subscription-stopped-p
+               subscription)
+              :to-equalp nil))))
 
 (defun run-tests ()
   (unless (run-all :reporter :spec
