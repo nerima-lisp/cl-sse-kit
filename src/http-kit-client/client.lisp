@@ -1,6 +1,7 @@
 (in-package #:sse-kit/http-kit-client)
 
 (defstruct (http-sse-subscription
+             (:conc-name %subscription-)
              (:constructor %make-http-sse-subscription
                  (&key url client protocol-client on-error on-retry on-redirect
                        lock condition-variable request-timeout
@@ -16,12 +17,12 @@
   thread
   request-timeout
   request-timeout-p
-  (stopped-p nil :accessor %subscription-stopped-p)
-  (finished-p nil :accessor %subscription-finished-p)
-  (error nil :accessor %subscription-error)
+  (stopped-p nil)
+  (finished-p nil)
+  (error nil)
   stop-reason
-  (last-event-id "" :accessor %subscription-last-event-id)
-  (next-retry-delay nil :accessor %subscription-next-retry-delay))
+  (last-event-id "")
+  (next-retry-delay nil))
 
 (defun %check-subscription (subscription)
   (unless (http-sse-subscription-p subscription)
@@ -32,7 +33,7 @@
 
 (defun %subscription-stopped-p* (subscription)
   (cl-concurrent-kit:with-lock-held
-      ((http-sse-subscription-lock subscription))
+      ((%subscription-lock subscription))
     (%subscription-stopped-p subscription)))
 
 (defun http-sse-subscription-stopped-p (subscription)
@@ -41,30 +42,30 @@
 (defun http-sse-subscription-finished-p (subscription)
   (let ((subscription (%check-subscription subscription)))
     (cl-concurrent-kit:with-lock-held
-        ((http-sse-subscription-lock subscription))
+        ((%subscription-lock subscription))
       (%subscription-finished-p subscription))))
 
 (defun http-sse-subscription-error (subscription)
   (let ((subscription (%check-subscription subscription)))
     (cl-concurrent-kit:with-lock-held
-        ((http-sse-subscription-lock subscription))
+        ((%subscription-lock subscription))
       (%subscription-error subscription))))
 
 (defun http-sse-subscription-last-event-id (subscription)
   (let ((subscription (%check-subscription subscription)))
     (cl-concurrent-kit:with-lock-held
-        ((http-sse-subscription-lock subscription))
+        ((%subscription-lock subscription))
       (%subscription-last-event-id subscription))))
 
 (defun http-sse-subscription-next-retry-delay (subscription)
   (let ((subscription (%check-subscription subscription)))
     (cl-concurrent-kit:with-lock-held
-        ((http-sse-subscription-lock subscription))
+        ((%subscription-lock subscription))
       (%subscription-next-retry-delay subscription))))
 
 (defun %set-subscription-error (subscription condition)
   (cl-concurrent-kit:with-lock-held
-      ((http-sse-subscription-lock subscription))
+      ((%subscription-lock subscription))
     (setf (%subscription-error subscription) condition))
   condition)
 
@@ -77,14 +78,14 @@ when that request completes or reaches its configured timeout."
   (let ((subscription (%check-subscription subscription))
         (protocol-client nil))
     (cl-concurrent-kit:with-lock-held
-        ((http-sse-subscription-lock subscription))
+        ((%subscription-lock subscription))
       (unless (%subscription-stopped-p subscription)
         (setf (%subscription-stopped-p subscription) t
-              (http-sse-subscription-stop-reason subscription) reason))
+              (%subscription-stop-reason subscription) reason))
       (setf protocol-client
-            (http-sse-subscription-protocol-client subscription))
+            (%subscription-protocol-client subscription))
       (cl-concurrent-kit:condition-broadcast
-       (http-sse-subscription-condition-variable subscription)))
+       (%subscription-condition-variable subscription)))
     (when protocol-client
       (sse-kit:stop-http-sse-client protocol-client reason))
     subscription))
@@ -92,7 +93,7 @@ when that request completes or reaches its configured timeout."
 (defun wait-http-sse-subscription (subscription &key (timeout nil timeout-p))
   "Wait for the worker to finish; return SUBSCRIPTION or NIL on timeout."
   (let* ((subscription (%check-subscription subscription))
-         (thread (http-sse-subscription-thread subscription)))
+         (thread (%subscription-thread subscription)))
     (when thread
       (if timeout-p
           (let ((timed-out (list :timed-out)))
@@ -106,9 +107,9 @@ when that request completes or reaches its configured timeout."
 
 (defun %dispatch-subscription-event (subscription event)
   (let ((dispatch-p nil)
-        (protocol-client (http-sse-subscription-protocol-client subscription)))
+        (protocol-client (%subscription-protocol-client subscription)))
     (cl-concurrent-kit:with-lock-held
-        ((http-sse-subscription-lock subscription))
+        ((%subscription-lock subscription))
       (unless (%subscription-stopped-p subscription)
         (setf (%subscription-last-event-id subscription)
               (sse-kit:http-sse-event-last-event-id event)
@@ -119,11 +120,11 @@ when that request completes or reaches its configured timeout."
       (funcall (sse-kit:http-sse-client-on-event protocol-client) event))))
 
 (defun %sync-parser-state (subscription parser)
-  (let* ((protocol-client (http-sse-subscription-protocol-client subscription))
+  (let* ((protocol-client (%subscription-protocol-client subscription))
          (last-event-id (sse-kit:http-sse-parser-last-event-id parser))
          (retry-ms (sse-kit:http-sse-parser-retry parser)))
     (cl-concurrent-kit:with-lock-held
-        ((http-sse-subscription-lock subscription))
+        ((%subscription-lock subscription))
       (setf (%subscription-last-event-id subscription) last-event-id
             (sse-kit:http-sse-client-last-event-id protocol-client) last-event-id)
       (when retry-ms
@@ -152,11 +153,11 @@ when that request completes or reaches its configured timeout."
                      (http-kit/client:http-utf8-octets last-event-id))))))))
 
 (defun %request-sse-response (subscription parser)
-  (let* ((client (http-sse-subscription-client subscription))
-         (protocol-client (http-sse-subscription-protocol-client subscription))
+  (let* ((client (%subscription-client subscription))
+         (protocol-client (%subscription-protocol-client subscription))
          (request
            (http-kit/client:http-client-request
-            client "GET" (http-sse-subscription-url subscription)
+            client "GET" (%subscription-url subscription)
             :headers (%transport-headers protocol-client)))
          (options
            (list :collect-body-p nil
@@ -165,12 +166,12 @@ when that request completes or reaches its configured timeout."
                    (unless (%subscription-stopped-p* subscription)
                      (sse-kit:feed-http-sse-parser parser chunk)
                      (%sync-parser-state subscription parser)))))
-         (timeout-p (http-sse-subscription-request-timeout-p subscription)))
+         (timeout-p (%subscription-request-timeout-p subscription)))
     (when timeout-p
       (setf options
             (append options
                     (list :timeout
-                          (http-sse-subscription-request-timeout subscription)))))
+                          (%subscription-request-timeout subscription)))))
     (apply #'http-kit/client:http-client-send client request options)))
 
 (defun %response-condition (subscription response)
@@ -204,7 +205,7 @@ when that request completes or reaches its configured timeout."
                   :detail :eof))
 
 (defun %perform-subscription-attempt (subscription)
-  (let* ((protocol-client (http-sse-subscription-protocol-client subscription))
+  (let* ((protocol-client (%subscription-protocol-client subscription))
          (parser
            (sse-kit:make-http-sse-parser
             :initial-last-event-id
@@ -254,7 +255,7 @@ when that request completes or reaches its configured timeout."
     (funcall (http-sse-subscription-on-error subscription) condition))
   (when (%subscription-stopped-p* subscription)
     (return-from %schedule-subscription-retry nil))
-  (let* ((protocol-client (http-sse-subscription-protocol-client subscription))
+  (let* ((protocol-client (%subscription-protocol-client subscription))
          (attempt (1+ (sse-kit:http-sse-client-retry-attempt protocol-client)))
          (policy (sse-kit:http-sse-client-retry-policy protocol-client)))
     (setf (sse-kit:http-sse-client-retry-attempt protocol-client) attempt)
@@ -273,7 +274,7 @@ when that request completes or reaches its configured timeout."
             nil)
           (let ((delay (%retry-delay protocol-client attempt decision)))
             (cl-concurrent-kit:with-lock-held
-                ((http-sse-subscription-lock subscription))
+                ((%subscription-lock subscription))
               (setf (%subscription-next-retry-delay subscription) delay))
             (when (http-sse-subscription-on-retry subscription)
               (funcall (http-sse-subscription-on-retry subscription)
@@ -286,9 +287,9 @@ when that request completes or reaches its configured timeout."
 
 (defun %wait-for-retry (subscription delay)
   (let ((deadline (+ (%monotonic-seconds) delay))
-        (lock (http-sse-subscription-lock subscription))
+        (lock (%subscription-lock subscription))
         (condition-variable
-          (http-sse-subscription-condition-variable subscription)))
+          (%subscription-condition-variable subscription)))
     (cl-concurrent-kit:with-lock-held (lock)
       (loop
         for remaining = (- deadline (%monotonic-seconds))
@@ -320,10 +321,10 @@ when that request completes or reaches its configured timeout."
            (%set-subscription-error subscription condition)
            (stop-http-sse-subscription subscription :error)))
     (cl-concurrent-kit:with-lock-held
-        ((http-sse-subscription-lock subscription))
+        ((%subscription-lock subscription))
       (setf (%subscription-finished-p subscription) t)
       (cl-concurrent-kit:condition-broadcast
-       (http-sse-subscription-condition-variable subscription))))
+       (%subscription-condition-variable subscription))))
   :finished)
 
 (defun subscribe-http-sse
@@ -370,9 +371,9 @@ cl-http-kit/client exposes its final response hook after body completion."
             :on-event
             (lambda (event)
               (%dispatch-subscription-event subscription event)))))
-    (setf (http-sse-subscription-protocol-client subscription) protocol-client
+    (setf (%subscription-protocol-client subscription) protocol-client
           (%subscription-last-event-id subscription) initial-last-event-id
-          (http-sse-subscription-thread subscription)
+          (%subscription-thread subscription)
           (cl-concurrent-kit:make-thread
            (lambda () (%subscription-worker subscription))
            :name "cl-sse-kit SSE subscription"))
