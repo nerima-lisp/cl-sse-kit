@@ -183,8 +183,8 @@ when that request completes or reaches its configured timeout."
       ((/= status 200)
        (let ((location (http-kit:http-header-value headers "location")))
          (when (and location (member status '(301 302 303 307 308) :test #'=)
-                    (http-sse-subscription-on-redirect subscription))
-           (funcall (http-sse-subscription-on-redirect subscription)
+                    (%subscription-on-redirect subscription))
+           (funcall (%subscription-on-redirect subscription)
                     location response)))
        (make-condition 'sse-kit:sse-http-error
                        :message "An SSE response must have HTTP status 200."
@@ -251,8 +251,8 @@ when that request completes or reaches its configured timeout."
 (defun %schedule-subscription-retry (subscription condition)
   (when (%subscription-stopped-p* subscription)
     (return-from %schedule-subscription-retry nil))
-  (when (http-sse-subscription-on-error subscription)
-    (funcall (http-sse-subscription-on-error subscription) condition))
+  (when (%subscription-on-error subscription)
+    (funcall (%subscription-on-error subscription) condition))
   (when (%subscription-stopped-p* subscription)
     (return-from %schedule-subscription-retry nil))
   (let* ((protocol-client (%subscription-protocol-client subscription))
@@ -276,8 +276,8 @@ when that request completes or reaches its configured timeout."
             (cl-concurrent-kit:with-lock-held
                 ((%subscription-lock subscription))
               (setf (%subscription-next-retry-delay subscription) delay))
-            (when (http-sse-subscription-on-retry subscription)
-              (funcall (http-sse-subscription-on-retry subscription)
+            (when (%subscription-on-retry subscription)
+              (funcall (%subscription-on-retry subscription)
                        delay condition))
             (not (%subscription-stopped-p* subscription)))))))
 
