@@ -213,28 +213,35 @@ when that request completes or reaches its configured timeout."
 
 (defun %perform-subscription-attempt (subscription)
   (let* ((protocol-client (%subscription-protocol-client subscription))
+         (callback-condition nil)
          (parser
            (sse-kit:make-http-sse-parser
             :initial-last-event-id
             (sse-kit:http-sse-client-last-event-id protocol-client)
             :on-event
             (lambda (event)
-              (%dispatch-subscription-event subscription event))))
+              (handler-case
+                  (%dispatch-subscription-event subscription event)
+                (%subscription-callback-error (callback-error)
+                  (setf callback-condition
+                        (%subscription-callback-error-condition
+                         callback-error))
+                  (stop-http-sse-subscription
+                   subscription :event-callback-error)))))
          (response nil))
     (handler-case
         (setf response (%request-sse-response subscription parser))
-      (%subscription-callback-error (callback-error)
-        (let ((condition
-                (%subscription-callback-error-condition callback-error)))
-          (%set-subscription-error subscription condition)
-          (stop-http-sse-subscription subscription :event-callback-error)
-          (when (%subscription-on-error subscription)
-            (funcall (%subscription-on-error subscription) condition))
-          (return-from %perform-subscription-attempt
-            (values condition t))))
       (error (condition)
-        (return-from %perform-subscription-attempt
-          (values condition nil))))
+        (unless callback-condition
+          (return-from %perform-subscription-attempt
+            (values condition nil)))))
+    (when callback-condition
+      (%set-subscription-error subscription callback-condition)
+      (when (%subscription-on-error subscription)
+        (funcall (%subscription-on-error subscription)
+                 callback-condition))
+      (return-from %perform-subscription-attempt
+        (values callback-condition t)))
     (when (%subscription-stopped-p* subscription)
       (return-from %perform-subscription-attempt (values nil t)))
     (let ((condition (%response-condition subscription response)))
@@ -252,7 +259,7 @@ when that request completes or reaches its configured timeout."
                (setf (sse-kit:http-sse-client-retry-attempt protocol-client) 0)
                (values (%make-disconnected-condition) nil))
            (error (condition)
-             (values condition nil))))))))
+             (values condition nil)))))))))
 
 (defun %retry-delay (protocol-client attempt decision)
   (let* ((policy (sse-kit:http-sse-client-retry-policy protocol-client))
