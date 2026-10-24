@@ -10,7 +10,7 @@
     };
 
     cl-http-message-kit = {
-      url = "github:nerima-lisp/cl-http-message-kit";
+      url = "github:nerima-lisp/cl-http-message-kit/v2.0.0";
     };
 
     cl-http-kit = {
