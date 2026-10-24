@@ -163,12 +163,8 @@ when that request completes or reaches its configured timeout."
            (list :collect-body-p nil
                  :on-body-chunk
                  (lambda (chunk)
-                   (format *error-output* "SSE body chunk: ~D octets~%"
-                           (length chunk))
                    (unless (%subscription-stopped-p* subscription)
                      (sse-kit:feed-http-sse-parser parser chunk)
-                     (format *error-output* "SSE parser event count: ~D~%"
-                             (sse-kit:http-sse-parser-event-count parser))
                      (%sync-parser-state subscription parser)))))
          (timeout-p (%subscription-request-timeout-p subscription)))
     (when timeout-p
@@ -214,7 +210,9 @@ when that request completes or reaches its configured timeout."
            (sse-kit:make-http-sse-parser
             :initial-last-event-id
             (sse-kit:http-sse-client-last-event-id protocol-client)
-            :on-event (sse-kit:http-sse-client-on-event protocol-client)))
+            :on-event
+            (lambda (event)
+              (%dispatch-subscription-event subscription event))))
          (response nil))
     (handler-case
         (setf response (%request-sse-response subscription parser))
@@ -373,8 +371,7 @@ cl-http-kit/client exposes its final response hook after body completion."
             :retry-forever-p retry-forever-p
             :initial-last-event-id initial-last-event-id
             :on-event
-            (lambda (event)
-              (%dispatch-subscription-event subscription event)))))
+            on-event)))
     (setf (%subscription-protocol-client subscription) protocol-client
           (%subscription-last-event-id subscription) initial-last-event-id
           (%subscription-thread subscription)
