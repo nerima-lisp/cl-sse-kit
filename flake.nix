@@ -13,6 +13,39 @@
       url = "github:nerima-lisp/cl-http-message-kit";
     };
 
+    cl-http-kit = {
+      url = "github:nerima-lisp/cl-http-kit/2d85f0c423f59811773f9412b950a539c5ffbdc7";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-weave.follows = "cl-weave";
+      inputs.cl-http-message-kit.follows = "cl-http-message-kit";
+      inputs.cl-concurrent-kit.follows = "cl-concurrent-kit";
+      inputs.cl-boundary-kit.follows = "cl-boundary-kit";
+      inputs.cl-date-kit.follows = "cl-date-kit";
+      inputs.cl-host-kit.follows = "cl-host-kit";
+      inputs.cl-codec-kit.follows = "cl-codec-kit";
+      inputs.cl-deflate-kit.follows = "cl-deflate-kit";
+      inputs.cl-tls-kit.follows = "cl-tls-kit";
+      inputs.cl-crypto-kit.follows = "cl-crypto-kit";
+    };
+
+    cl-deflate-kit = {
+      url = "github:nerima-lisp/cl-deflate-kit/main";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-weave.follows = "cl-weave";
+    };
+
+    cl-crypto-kit = {
+      url = "github:nerima-lisp/cl-crypto-kit/main";
+      flake = false;
+    };
+
+    cl-tls-kit = {
+      url = "github:nerima-lisp/cl-tls-kit/v0.1.2";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-weave.follows = "cl-weave";
+      inputs.cl-crypto-kit.follows = "cl-crypto-kit";
+    };
+
     cl-resilience-kit = {
       url = "github:nerima-lisp/cl-resilience-kit/v1.0.0";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -35,15 +68,23 @@
       nixpkgs,
       cl-codec-kit,
       cl-http-message-kit,
+      cl-http-kit,
       cl-resilience-kit,
       cl-boundary-kit,
       cl-concurrent-kit,
       cl-date-kit,
       cl-host-kit,
+      cl-deflate-kit,
+      cl-tls-kit,
+      cl-crypto-kit,
       cl-weave,
       ...
     }:
     let
+      clHttpKit = cl-http-kit.outPath;
+      clDeflate = cl-deflate-kit.outPath;
+      clTls = cl-tls-kit.outPath;
+      clCrypto = cl-crypto-kit;
       systems = [
         "aarch64-darwin"
         "x86_64-linux"
@@ -90,11 +131,16 @@
               cl-concurrent-kit.packages.${system}.default
               cl-date-kit.packages.${system}.default
               cl-host-kit.packages.${system}.default
+              pkgs.openssl
+              pkgs.python3
               cl-weave.packages.${system}.default
               pkgs.sbcl
               pkgs.coreutils
               pkgs.perl
             ];
+            shellHook = ''
+              export CL_SOURCE_REGISTRY="''${CL_SOURCE_REGISTRY:-$PWD//:${cl-codec-kit.outPath}//:${cl-http-message-kit.outPath}//:${cl-resilience-kit.outPath}//:${cl-boundary-kit.outPath}//:${cl-concurrent-kit.outPath}//:${cl-date-kit.outPath}//:${cl-host-kit.outPath}//:${cl-weave.outPath}//:${clHttpKit}//:${clDeflate}//:${clTls}//:${clCrypto}//}"
+            '';
           };
         }
       );
@@ -118,6 +164,10 @@
             "${clBoundary}/cl-boundary-kit.asd"
             "${clConcurrent}/cl-concurrent-kit.asd"
             "${clResilience}/cl-resilience-kit.asd"
+            "${clHttpKit}/cl-http-kit.asd"
+            "${clDeflate}/cl-deflate-kit.asd"
+            "${clTls}/cl-tls-kit.asd"
+            "${clCrypto}/cl-crypto-kit.asd"
           ];
           asdLoadOptions = builtins.concatStringsSep " " (map (path: "--load ${path}") asdFiles);
           test = pkgs.writeShellApplication {
@@ -132,12 +182,23 @@
               clConcurrent
               clDate
               clHost
+              pkgs.openssl
+              pkgs.python3
               clWeave
             ];
             text = ''
               export CL_SOURCE_REGISTRY='(:source-registry :ignore-inherited-configuration)'
               timeout --signal=TERM --kill-after=15s 300s \
                 cl-weave run cl-sse-kit/test \
+                --reporter spec \
+                --max-workers 1 \
+                --test-timeout-ms 300000 \
+                --fail-with-no-tests \
+                ${asdLoadOptions} \
+                --load "$PWD/t/load-local-system.asd" \
+                "$@"
+              timeout --signal=TERM --kill-after=15s 300s \
+                cl-weave run cl-sse-kit/http-kit-client/test \
                 --reporter spec \
                 --max-workers 1 \
                 --test-timeout-ms 300000 \

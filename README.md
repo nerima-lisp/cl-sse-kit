@@ -219,10 +219,56 @@ triggered the notification. `:on-event` remains part of the body-processing
 operation, so its conditions propagate through `feed-http-sse-client` and the
 corresponding read/consume operation.
 
+## cl-http-kit client integration
+
+The optional `cl-sse-kit/http-kit-client` ASDF system runs subscriptions over
+the public `cl-http-kit/client` API. Load it separately from `cl-sse-kit` and
+pass in the HTTP client you configured for your application:
+
+```lisp
+(asdf:load-system "cl-sse-kit/http-kit-client")
+
+(let ((subscription
+        (sse-kit/http-kit-client:subscribe-http-sse
+         "https://events.example.test/stream"
+         #'handle-event
+         :http-client http-client
+         :retry-policy retry-policy
+         :on-error #'handle-error
+         :on-retry (lambda (delay condition)
+                     (declare (ignore condition))
+                     (format *trace-output* "Retrying in ~,3F seconds.~%"
+                             delay)))))
+  subscription)
+```
+
+Store the returned handle in application state. When the application is ready
+to stop the subscription, call `stop-http-sse-subscription` and then
+`wait-http-sse-subscription` with that handle.
+
+`subscribe-http-sse` returns immediately and calls `handle-event` on its worker
+thread. It reuses the supplied HTTP client for reconnects, retaining that
+client's cookie jar, proxy, TLS, redirect, timeout, and response-size settings.
+The `:timeout` keyword passed to `subscribe-http-sse` overrides the per-request
+timeout; pass `NIL` to remove the relative timeout for a request. Without it,
+the HTTP client's default timeout applies. Set a finite `:max-body-bytes` limit
+larger than the expected bytes for one connection; the client enforces that
+limit even when body collection is disabled.
+
+The cl-http-kit client exposes its final status and response headers after the
+body callback completes. The adapter therefore dispatches body events before
+it can validate status and `Content-Type`; an error response containing
+event-shaped text may reach `handle-event` before its response is rejected.
+Likewise, `stop-http-sse-subscription` wakes a worker waiting to reconnect, but
+cannot close an active cl-http-kit request through its public API. During a
+request it takes effect at the next body chunk, or after the configured
+request timeout. `wait-http-sse-subscription` returns the subscription when
+the worker has finished and `NIL` if its own optional `:timeout` expires.
+
 ## Transport adapter checklist
 
-Integrations stop at the HTTP message and byte-stream boundary.
-An adapter that connects it to a web server or HTTP client should:
+The core protocol APIs stop at the HTTP message and byte-stream boundary. A
+custom adapter that connects them to a web server or HTTP client should:
 
 1. Validate incoming metadata with `validate-http-sse-request` before creating a
    session.

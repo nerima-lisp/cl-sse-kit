@@ -40,3 +40,31 @@
   :perform (asdf:test-op (op c)
              (declare (ignore op c))
              (uiop:symbol-call "SSE-KIT/TEST" "RUN-TESTS")))
+
+(asdf:defsystem "cl-sse-kit/http-kit-client"
+  :description "An HTTP client integration for cl-sse-kit using cl-http-kit/client."
+  :author "nerima-lisp"
+  :license "MIT"
+  :version "1.0.0"
+  :depends-on ("cl-sse-kit" "cl-http-kit/client" "cl-concurrent-kit")
+  :pathname "src/http-kit-client"
+  :serial t
+  :components ((:file "package")
+               (:file "client")))
+
+(asdf:defsystem "cl-sse-kit/http-kit-client/test"
+  :description "Loopback HTTPS tests for the cl-http-kit client integration."
+  :author "nerima-lisp"
+  :license "MIT"
+  :depends-on ("cl-sse-kit/http-kit-client"
+               "cl-http-kit/network"
+               "cl-http-kit/tls"
+               "cl-weave")
+  :pathname "t/http-kit-client"
+  :serial t
+  :components ((:file "package")
+               (:file "tests")
+               (:file "runner"))
+  :perform (asdf:test-op (op c)
+             (declare (ignore op c))
+             (uiop:symbol-call "SSE-KIT/HTTP-KIT-CLIENT/TEST" "RUN-TESTS")))
