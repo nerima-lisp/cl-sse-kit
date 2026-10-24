@@ -20,7 +20,6 @@
   (stopped-p nil)
   (finished-p nil)
   (error nil)
-  stop-reason
   (last-event-id "")
   (next-retry-delay nil))
 
@@ -82,7 +81,6 @@ when that request completes or reaches its configured timeout."
         ((%subscription-lock subscription))
       (unless (%subscription-stopped-p subscription)
         (setf (%subscription-stopped-p subscription) t
-              (%subscription-stop-reason subscription) reason
               wake-worker-p t))
       (setf protocol-client
             (%subscription-protocol-client subscription)))
