@@ -249,6 +249,9 @@ to stop the subscription, call `stop-http-sse-subscription` and then
 `subscribe-http-sse` returns immediately and calls `handle-event` on its worker
 thread. It reuses the supplied HTTP client for reconnects, retaining that
 client's cookie jar, proxy, TLS, redirect, timeout, and response-size settings.
+The adapter respects the retry policy's attempt limit by default. Set
+`:retry-forever-p t` to opt into retries beyond that limit when the policy still
+classifies a condition as retryable.
 The `:timeout` keyword passed to `subscribe-http-sse` overrides the per-request
 timeout; pass `NIL` to remove the relative timeout for a request. Without it,
 the HTTP client's default timeout applies. Set a finite `:max-body-bytes` limit

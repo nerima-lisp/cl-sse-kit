@@ -18,6 +18,11 @@ responses = {
         (200, "text/event-stream", b"id: uncommitted\n", []),
         (200, "text/event-stream", b"data: recovered\nid: committed\n\n", []),
     ],
+    "retry-limit": [
+        (500, "text/plain", b"server error", []),
+        (500, "text/plain", b"server error", []),
+        (500, "text/plain", b"server error", []),
+    ],
 }
 
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

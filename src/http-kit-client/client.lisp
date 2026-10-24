@@ -327,7 +327,7 @@ when that request completes or reaches its configured timeout."
   :finished)
 
 (defun subscribe-http-sse
-    (url on-event &key http-client retry-policy (retry-forever-p t)
+    (url on-event &key http-client retry-policy (retry-forever-p nil)
                          (initial-last-event-id "") on-error on-retry on-redirect
                          (timeout nil timeout-p))
   "Start an asynchronous SSE subscription using an existing HTTP client.

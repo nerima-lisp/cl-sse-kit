@@ -354,7 +354,52 @@
       (expect (not (search "\"last-event-id\"" (second records))) :to-equalp t)
       (expect (sse-kit/http-kit-client:http-sse-subscription-last-event-id
                subscription)
-              :to-equalp "committed"))))
+              :to-equalp "committed")))
+  (it "respects the retry policy attempt limit by default"
+    (let ((subscription nil)
+          (retry-count 0)
+          (request-count 0)
+          (records nil))
+      (multiple-value-bind (ignored server-records)
+          (%call-with-https-server
+           "retry-limit"
+           (lambda (port)
+             (let ((client
+                     (%make-test-http-client
+                      (lambda (request attempt)
+                        (declare (ignore request attempt))
+                        (incf request-count)))))
+               (setf subscription
+                     (sse-kit/http-kit-client:subscribe-http-sse
+                      (format nil "https://127.0.0.1:~D/events" port)
+                      (lambda (event)
+                        (declare (ignore event))
+                        (error "The error response dispatched an event."))
+                      :http-client client
+                      :retry-policy (%test-retry-policy)
+                      :on-retry (lambda (delay condition)
+                                  (declare (ignore delay condition))
+                                  (incf retry-count))))
+               (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                        subscription :timeout 5)
+                 (sse-kit/http-kit-client:stop-http-sse-subscription
+                  subscription)
+                 (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                          subscription :timeout 5)
+                   (error "The subscription worker did not stop after cleanup."))
+                 (error "The subscription did not respect its retry limit."))
+               t)))
+        (declare (ignore ignored))
+        (setf records server-records))
+      (expect request-count :to-equalp 3)
+      (expect retry-count :to-equalp 2)
+      (expect (length records) :to-equalp 3)
+      (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
+               subscription)
+              :to-equalp t)
+      (expect (sse-kit/http-kit-client:http-sse-subscription-error
+               subscription)
+              :to-be-truthy))))
 
 (defun run-tests ()
   (unless (run-all :reporter :spec
