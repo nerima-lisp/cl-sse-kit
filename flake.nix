@@ -11,6 +11,15 @@
 
     cl-http-message-kit = {
       url = "github:nerima-lisp/cl-http-message-kit/v2.0.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-weave.follows = "cl-weave";
+      inputs.cl-hpack-codec-kit.follows = "cl-hpack-codec-kit";
+    };
+
+    cl-hpack-codec-kit = {
+      url = "github:nerima-lisp/cl-hpack-codec-kit/v1.1.2";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-weave.follows = "cl-weave";
     };
 
     cl-http-kit = {
@@ -18,6 +27,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-weave.follows = "cl-weave";
       inputs.cl-http-message-kit.follows = "cl-http-message-kit";
+      inputs.cl-hpack-codec-kit.follows = "cl-hpack-codec-kit";
       inputs.cl-concurrent-kit.follows = "cl-concurrent-kit";
       inputs.cl-boundary-kit.follows = "cl-boundary-kit";
       inputs.cl-date-kit.follows = "cl-date-kit";
@@ -68,6 +78,7 @@
       nixpkgs,
       cl-codec-kit,
       cl-http-message-kit,
+      cl-hpack-codec-kit,
       cl-http-kit,
       cl-resilience-kit,
       cl-boundary-kit,
@@ -126,6 +137,7 @@
             packages = [
               cl-codec-kit.packages.${system}.default
               cl-http-message-kit.packages.${system}.default
+              cl-hpack-codec-kit.packages.${system}.default
               cl-resilience-kit.packages.${system}.default
               cl-boundary-kit.packages.${system}.default
               cl-concurrent-kit.packages.${system}.default
@@ -139,7 +151,7 @@
               pkgs.perl
             ];
             shellHook = ''
-              export CL_SOURCE_REGISTRY="''${CL_SOURCE_REGISTRY:-$PWD//:${cl-codec-kit.outPath}//:${cl-http-message-kit.outPath}//:${cl-resilience-kit.outPath}//:${cl-boundary-kit.outPath}//:${cl-concurrent-kit.outPath}//:${cl-date-kit.outPath}//:${cl-host-kit.outPath}//:${cl-weave.outPath}//:${clHttpKit}//:${clDeflate}//:${clTls}//:${clCrypto}//}"
+              export CL_SOURCE_REGISTRY="''${CL_SOURCE_REGISTRY:-$PWD//:${cl-codec-kit.outPath}//:${cl-http-message-kit.outPath}//:${cl-hpack-codec-kit.packages.${system}.default}/share/common-lisp/source//:${cl-resilience-kit.outPath}//:${cl-boundary-kit.outPath}//:${cl-concurrent-kit.outPath}//:${cl-date-kit.outPath}//:${cl-host-kit.outPath}//:${cl-weave.outPath}//:${clHttpKit}//:${clDeflate}//:${clTls}//:${clCrypto}//}"
             '';
           };
         }
@@ -150,6 +162,7 @@
         let
           clCodec = cl-codec-kit.packages.${system}.default;
           clHttpMessage = cl-http-message-kit.packages.${system}.default;
+          clHpack = cl-hpack-codec-kit.packages.${system}.default;
           clResilience = cl-resilience-kit.packages.${system}.default;
           clBoundary = cl-boundary-kit.packages.${system}.default;
           clConcurrent = cl-concurrent-kit.packages.${system}.default;
@@ -158,6 +171,7 @@
           clWeave = cl-weave.packages.${system}.default;
           asdFiles = [
             "${clCodec}/cl-codec-kit.asd"
+            "${clHpack}/share/common-lisp/source/cl-hpack-codec-kit/cl-hpack-codec-kit.asd"
             "${clHttpMessage}/share/common-lisp/source/cl-http-message-kit/cl-http-message-kit.asd"
             "${clDate}/cl-date-kit.asd"
             "${clHost}/cl-host-kit.asd"
@@ -176,6 +190,7 @@
               pkgs.sbcl
               pkgs.coreutils
               clCodec
+              clHpack
               clHttpMessage
               clResilience
               clBoundary
@@ -214,6 +229,7 @@
               pkgs.sbcl
               pkgs.coreutils
               clCodec
+              clHpack
               clHttpMessage
               clResilience
               clBoundary
