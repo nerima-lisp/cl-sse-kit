@@ -85,7 +85,18 @@
                         (error "HTTPS fixture exited before reporting its port (~D):~%~{~A~%~}"
                                exit-status
                                (%read-lines error-output))))))
-                  (value (funcall thunk port))
+                  (value
+                    (handler-case
+                        (funcall thunk port)
+                      (error (condition)
+                        (when process
+                          (ignore-errors (uiop:terminate-process process))
+                          (ignore-errors (uiop:wait-process process))
+                          (setf process nil))
+                        (error "HTTPS fixture test failed:~%~A~%Requests:~%~{~A~%~}~%stderr:~%~{~A~%~}"
+                               condition
+                               (%read-lines output)
+                               (%read-lines error-output)))))
                   (exit-status (uiop:wait-process process)))
              (setf process nil)
              (let ((records (%read-lines output)))
