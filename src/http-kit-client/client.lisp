@@ -227,7 +227,7 @@ when that request completes or reaches its configured timeout."
                         (%subscription-callback-error-condition
                          callback-error))
                   (stop-http-sse-subscription
-                   subscription :event-callback-error)))))
+                   subscription :event-callback-error))))))
          (response nil))
     (handler-case
         (setf response (%request-sse-response subscription parser))
@@ -259,7 +259,7 @@ when that request completes or reaches its configured timeout."
                (setf (sse-kit:http-sse-client-retry-attempt protocol-client) 0)
                (values (%make-disconnected-condition) nil))
            (error (condition)
-             (values condition nil)))))))))
+             (values condition nil))))))))
 
 (defun %retry-delay (protocol-client attempt decision)
   (let* ((policy (sse-kit:http-sse-client-retry-policy protocol-client))
