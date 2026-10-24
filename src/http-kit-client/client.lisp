@@ -111,13 +111,23 @@ when that request completes or reaches its configured timeout."
     (cl-concurrent-kit:with-lock-held
         ((%subscription-lock subscription))
       (unless (%subscription-stopped-p subscription)
-        (setf (%subscription-last-event-id subscription)
-              (sse-kit:http-sse-event-last-event-id event)
-              (sse-kit:http-sse-client-last-event-id protocol-client)
-              (sse-kit:http-sse-event-last-event-id event)
-              dispatch-p t)))
+        (setf dispatch-p t)))
     (when dispatch-p
-      (funcall (sse-kit:http-sse-client-on-event protocol-client) event))))
+      (multiple-value-prog1
+          (handler-case
+              (funcall (sse-kit:http-sse-client-on-event protocol-client) event)
+            (error (condition)
+              (error (quote %subscription-callback-error)
+                     :condition condition)))
+        (cl-concurrent-kit:with-lock-held
+            ((%subscription-lock subscription))
+          (setf (%subscription-last-event-id subscription)
+                (sse-kit:http-sse-event-last-event-id event)
+                (sse-kit:http-sse-client-last-event-id protocol-client)
+                (sse-kit:http-sse-event-last-event-id event)))))))
+(define-condition %subscription-callback-error (error)
+  ((condition :initarg :condition
+              :reader %subscription-callback-error-condition)))
 
 (defun %sync-parser-state (subscription parser)
   (let* ((protocol-client (%subscription-protocol-client subscription))
@@ -213,6 +223,15 @@ when that request completes or reaches its configured timeout."
          (response nil))
     (handler-case
         (setf response (%request-sse-response subscription parser))
+      (%subscription-callback-error (callback-error)
+        (let ((condition
+                (%subscription-callback-error-condition callback-error)))
+          (%set-subscription-error subscription condition)
+          (stop-http-sse-subscription subscription :event-callback-error)
+          (when (%subscription-on-error subscription)
+            (funcall (%subscription-on-error subscription) condition))
+          (return-from %perform-subscription-attempt
+            (values condition t))))
       (error (condition)
         (return-from %perform-subscription-attempt
           (values condition nil))))

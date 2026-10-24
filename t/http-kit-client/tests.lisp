@@ -399,7 +399,64 @@
               :to-equalp t)
       (expect (sse-kit/http-kit-client:http-sse-subscription-error
                subscription)
-              :to-be-truthy))))
+              :to-be-truthy)))
+  (it "does not retry event callback errors and records them on the subscription"
+    (let ((subscription nil)
+          (error-received (cl-concurrent-kit:make-semaphore))
+          (reported-condition nil)
+          (error-count 0)
+          (retry-count 0)
+          (request-count 0)
+          (records nil))
+      (multiple-value-bind (ignored server-records)
+          (%call-with-https-server
+           "callback-error"
+           (lambda (port)
+             (let ((client
+                     (%make-test-http-client
+                      (lambda (request attempt)
+                        (declare (ignore request attempt))
+                        (incf request-count)))))
+               (setf subscription
+                     (sse-kit/http-kit-client:subscribe-http-sse
+                      (format nil "https://127.0.0.1:~D/events" port)
+                      (lambda (event)
+                        (declare (ignore event))
+                        (error "callback failed"))
+                      :http-client client
+                      :retry-policy (%test-retry-policy)
+                      :on-error (lambda (condition)
+                                  (setf reported-condition condition)
+                                  (incf error-count)
+                                  (cl-concurrent-kit:signal-semaphore
+                                   error-received))
+                      :on-retry (lambda (delay condition)
+                                  (declare (ignore delay condition))
+                                  (incf retry-count))))
+               (unless (cl-concurrent-kit:wait-on-semaphore
+                        error-received :timeout 5)
+                 (error "The callback error was not reported."))
+               (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                        subscription :timeout 5)
+                 (error "The subscription worker did not finish."))
+               t)))
+        (declare (ignore ignored))
+        (setf records server-records))
+      (expect request-count :to-equalp 1)
+      (expect retry-count :to-equalp 0)
+      (expect error-count :to-equalp 1)
+      (expect (length records) :to-equalp 1)
+      (expect (typep reported-condition (quote simple-error)) :to-equalp t)
+      (expect (eq (sse-kit/http-kit-client:http-sse-subscription-error
+                   subscription)
+                  reported-condition)
+              :to-equalp t)
+      (expect (sse-kit/http-kit-client:http-sse-subscription-last-event-id
+               subscription)
+              :to-equalp "")
+      (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
+               subscription)
+              :to-equalp t))))
 
 (defun run-tests ()
   (unless (run-all :reporter :spec

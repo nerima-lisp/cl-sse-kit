@@ -23,6 +23,9 @@ responses = {
         (500, "text/plain", b"server error", []),
         (500, "text/plain", b"server error", []),
     ],
+    "callback-error": [
+        (200, "text/event-stream", b"data: callback\nid: callback-id\n\n", []),
+    ],
 }
 
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

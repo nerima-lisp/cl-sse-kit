@@ -252,6 +252,10 @@ client's cookie jar, proxy, TLS, redirect, timeout, and response-size settings.
 The adapter respects the retry policy's attempt limit by default. Set
 `:retry-forever-p t` to opt into retries beyond that limit when the policy still
 classifies a condition as retryable.
+If `handle-event` signals an error, the worker stops without retrying. The
+condition is passed to `on-error` and returned by
+`http-sse-subscription-error`; the event ID is committed only after the
+callback returns successfully.
 The `:timeout` keyword passed to `subscribe-http-sse` overrides the per-request
 timeout; pass `NIL` to remove the relative timeout for a request. Without it,
 the HTTP client's default timeout applies. Set a finite `:max-body-bytes` limit
