@@ -76,7 +76,15 @@
                   :wait nil)
                  output (uiop:process-info-output process)
                  error-output (uiop:process-info-error-output process))
-           (let* ((port (parse-integer (read-line output)))
+           (let* ((port
+                    (handler-case
+                      (parse-integer (read-line output))
+                    (end-of-file ()
+                      (let ((exit-status (uiop:wait-process process)))
+                        (setf process nil)
+                        (error "HTTPS fixture exited before reporting its port (~D):~%~{~A~%~}"
+                               exit-status
+                               (%read-lines error-output))))))
                   (value (funcall thunk port))
                   (exit-status (uiop:wait-process process)))
              (setf process nil)
