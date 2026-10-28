@@ -15,6 +15,7 @@
   lock
   stop-semaphore
   thread
+  active-request-token
   request-timeout
   request-timeout-p
   (stopped-p nil)
@@ -69,13 +70,13 @@
   condition)
 
 (defun stop-http-sse-subscription (subscription &optional (reason :stopped))
-  "Request a permanent stop and wake a worker waiting before reconnecting.
+  "Stop the subscription, cancel its active request, and wake retry waits.
 
-A request already blocked in cl-http-kit/client cannot be closed through its
-public API. Event dispatch stops at the next body chunk, and the worker exits
-when that request completes or reaches its configured timeout."
+The active request is cancelled through cl-http-kit/client's cancellation token.
+Transport cancellation latency depends on the active protocol."
   (let ((subscription (%check-subscription subscription))
         (protocol-client nil)
+        (cancel-token nil)
         (wake-worker-p nil))
     (cl-concurrent-kit:with-lock-held
         ((%subscription-lock subscription))
@@ -83,10 +84,14 @@ when that request completes or reaches its configured timeout."
         (setf (%subscription-stopped-p subscription) t
               wake-worker-p t))
       (setf protocol-client
-            (%subscription-protocol-client subscription)))
+            (%subscription-protocol-client subscription)
+            cancel-token
+            (%subscription-active-request-token subscription)))
     (when wake-worker-p
       (cl-concurrent-kit:signal-semaphore
        (%subscription-stop-semaphore subscription)))
+    (when cancel-token
+      (http-kit/client:http-client-cancel-request cancel-token))
     (when protocol-client
       (sse-kit:stop-http-sse-client protocol-client reason))
     subscription))
@@ -159,43 +164,176 @@ when that request completes or reaches its configured timeout."
                 "last-event-id"
                 (map 'string #'code-char
                      (http-kit/client:http-utf8-octets last-event-id))))))))
+(defun %subscription-redirect-request
+    (client current-request initial-uri protocol-client response redirect-count)
+  (let* ((policy (http-kit/client:http-client-redirect-policy client))
+         (current-uri (http-kit:http-request-uri current-request))
+         (location
+           (http-kit:http-header-value
+            (http-kit:http-response-headers response) "location"))
+         (target (http-kit/client:resolve-http-uri current-uri location))
+         (downgrade-p
+           (and (string-equal (http-kit:http-uri-scheme current-uri) "https")
+                (string-equal (http-kit:http-uri-scheme target) "http")))
+         (remove-names '("cookie" "proxy-authorization")))
+    (declare (ignore protocol-client))
+    (when (>= redirect-count
+             (http-kit/client:http-redirect-policy-max-redirects policy))
+      (error 'http-kit/client:http-redirect-limit-exceeded
+             :message "The HTTP redirect policy exhausted its redirect limit."
+             :operation :redirect
+             :detail (list :uri current-uri :redirects redirect-count)
+             :uri current-uri
+             :redirects redirect-count))
+    (when (and downgrade-p
+               (not (http-kit/client:http-redirect-policy-allow-downgrade-p
+                     policy)))
+      (error 'http-kit/client:http-client-error
+             :message "The redirect policy rejected an HTTPS to HTTP downgrade."
+             :operation :redirect
+             :detail target))
+    (unless (or (http-kit/client:http-redirect-policy-preserve-authorization-p
+                 policy)
+                (http-kit/client:http-same-origin-p initial-uri target))
+      (push "authorization" remove-names))
+    (unless (http-kit/client:http-same-origin-p current-uri target)
+      (setf remove-names
+            (append '("host" "origin" "referer") remove-names)))
+    (http-kit:make-http-request
+     :method (http-kit:http-request-method current-request)
+     :protocol-version (http-kit:http-request-protocol-version current-request)
+     :uri target
+     :headers
+     (remove-if
+      (lambda (header)
+        (member (http-kit:http-header-name header) remove-names
+                :test #'string-equal))
+      (http-kit:http-request-headers current-request))
+     :trailers (http-kit:http-request-trailers current-request)
+     :body (http-kit:http-request-body current-request))))
 
 (defun %request-sse-response (subscription parser)
   (let* ((client (%subscription-client subscription))
          (protocol-client (%subscription-protocol-client subscription))
-         (request
+         (initial-request
            (http-kit/client:http-client-request
             client "GET" (%subscription-url subscription)
             :headers (%transport-headers protocol-client)))
-         (options
-           (list :collect-body-p nil
-                 :on-body-chunk
-                 (lambda (chunk)
-                   (unless (%subscription-stopped-p* subscription)
-                     (sse-kit:feed-http-sse-parser parser chunk)
-                     (%sync-parser-state subscription parser)))))
+         (initial-uri (http-kit:http-request-uri initial-request))
          (timeout-p (%subscription-request-timeout-p subscription)))
-    (when timeout-p
-      (setf options
-            (append options
-                    (list :timeout
-                          (%subscription-request-timeout subscription)))))
-    (apply #'http-kit/client:http-client-send client request options)))
+    (block request-loop
+      (loop with request = initial-request
+            with redirect-count = 0
+            do (let ((cancel-token
+                       (http-kit/client:make-http-cancellation-token)))
+                 (unless
+                     (cl-concurrent-kit:with-lock-held
+                         ((%subscription-lock subscription))
+                       (unless (%subscription-stopped-p subscription)
+                         (setf (%subscription-active-request-token subscription)
+                               cancel-token)
+                         t))
+                   (return-from request-loop nil))
+                 (unwind-protect
+                      (let ((response-kind nil)
+                            (response-condition nil)
+                            (redirect-location nil))
+                        (let ((options
+                                (list
+                                 :collect-body-p nil
+                                 :cancel-token cancel-token
+                                 :on-response-headers
+                                 (lambda (status headers)
+                                   (let* ((policy
+                                            (http-kit/client:http-client-redirect-policy
+                                             client))
+                                          (location
+                                            (http-kit:http-header-value
+                                             headers "location"))
+                                          (redirect-p
+                                            (and location
+                                                 (member
+                                                  status
+                                                  (http-kit/client:http-redirect-policy-statuses
+                                                   policy)
+                                                  :test #'=))))
+                                     (if redirect-p
+                                         (setf response-kind :redirect
+                                               redirect-location location)
+                                         (let ((condition
+                                                 (%response-condition
+                                                  status headers)))
+                                           (cond
+                                             ((eq condition :no-content)
+                                              (setf response-kind :no-content))
+                                             (condition
+                                              (setf response-kind :invalid
+                                                    response-condition condition)
+                                              (http-kit/client:http-client-cancel-request
+                                               cancel-token))
+                                             (t
+                                              (setf response-kind :sse))))))
+                                 :on-body-chunk
+                                 (lambda (chunk)
+                                   (when (and (eq response-kind :sse)
+                                              (not (%subscription-stopped-p*
+                                                    subscription)))
+                                     (sse-kit:feed-http-sse-parser parser chunk)
+                                     (%sync-parser-state subscription parser))))))
+                          (when timeout-p
+                            (setf options
+                                  (append options
+                                          (list :timeout
+                                                (%subscription-request-timeout
+                                                 subscription)))))
+                          (handler-case
+                              (multiple-value-bind (response effective-request)
+                                  (apply #'http-kit/client:http-client-send
+                                         client request options)
+                                (cond
+                                  ((eq response-kind :redirect)
+                                   (when (%subscription-on-redirect subscription)
+                                     (funcall (%subscription-on-redirect
+                                               subscription)
+                                              redirect-location response))
+                                   (when (%subscription-stopped-p* subscription)
+                                     (return-from request-loop nil))
+                                   (setf request
+                                         (%subscription-redirect-request
+                                          client
+                                          (or effective-request request)
+                                          initial-uri
+                                          protocol-client
+                                          response
+                                          redirect-count))
+                                   (incf redirect-count))
+                                  ((eq response-kind :invalid)
+                                   (error response-condition))
+                                  (t
+                                   (return-from request-loop response))))
+                            (http-kit/client:http-client-request-cancelled
+                             (condition)
+                             (cond
+                               ((eq response-kind :invalid)
+                                (error response-condition))
+                               ((%subscription-stopped-p* subscription)
+                                (return-from request-loop nil))
+                               (t
+                                (error condition))))))
+                   (cl-concurrent-kit:with-lock-held
+                       ((%subscription-lock subscription))
+                     (when (eq (%subscription-active-request-token subscription)
+                               cancel-token)
+                       (setf (%subscription-active-request-token subscription)
+                             nil)))))))))
+))
 
-(defun %response-condition (subscription response)
-  (let* ((status (http-kit:http-response-status response))
-         (headers (http-kit:http-response-headers response))
-         (content-type (http-kit:http-header-value headers "content-type")))
+(defun %response-condition (status headers)
+  (let ((content-type (http-kit:http-header-value headers "content-type")))
     (cond
-      ((= status 204) :no-content)
-      ((/= status 200)
-       (let ((location (http-kit:http-header-value headers "location")))
-         (when (and location (member status '(301 302 303 307 308) :test #'=)
-                    (%subscription-on-redirect subscription))
-           (funcall (%subscription-on-redirect subscription)
-                    location response)))
+      ((not (<= 200 status 299))
        (make-condition 'sse-kit:sse-http-error
-                       :message "An SSE response must have HTTP status 200."
+                       :message "An SSE response must have a 2xx HTTP status."
                        :operation :http-response
                        :status status
                        :headers headers))
@@ -204,7 +342,8 @@ when that request completes or reaches its configured timeout."
                        :message "An SSE response must have a valid text/event-stream content type."
                        :operation :http-response
                        :status status
-                       :headers headers)))))
+                       :headers headers))
+      ((= status 204) :no-content))))
 
 (defun %make-disconnected-condition ()
   (make-condition 'sse-kit:sse-client-disconnected
@@ -243,7 +382,10 @@ when that request completes or reaches its configured timeout."
         (values callback-condition t)))
     (when (%subscription-stopped-p* subscription)
       (return-from %perform-subscription-attempt (values nil t)))
-    (let ((condition (%response-condition subscription response)))
+    (let ((condition
+            (%response-condition
+             (http-kit:http-response-status response)
+             (http-kit:http-response-headers response))))
       (cond
         ((eq condition :no-content)
          (stop-http-sse-subscription subscription :no-content)
@@ -350,9 +492,10 @@ when that request completes or reaches its configured timeout."
   "Start an asynchronous SSE subscription using an existing HTTP client.
 
 ON-EVENT receives SSE event objects on the subscription worker thread. The
-HTTP client object is reused unchanged for every request. Response status and
-headers are checked after the body callback has received all chunks, because
-cl-http-kit/client exposes its final response hook after body completion."
+HTTP client object is reused unchanged for every request. Status and
+Content-Type are validated in the response-headers callback before any body
+chunk reaches the SSE parser. Redirect hops use the client's redirect policy.
+Stopping cancels the active request and wakes a worker waiting to reconnect."
   (unless (or (stringp url) (http-kit:http-uri-p url))
     (error 'type-error :datum url :expected-type '(or string http-kit:http-uri)))
   (unless (functionp on-event)
