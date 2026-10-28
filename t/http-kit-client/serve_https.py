@@ -60,6 +60,7 @@ redirect_statuses = {
 redirect_modes = set(redirect_statuses) | {
     "redirect",
     "redirect-cross-origin",
+    "redirect-cross-origin-terminal",
     "redirect-downgrade",
     "redirect-downgrade-allowed",
     "redirect-hsts",
@@ -83,7 +84,11 @@ try:
             request_count = 11
         elif mode == "redirect-configured-limit":
             request_count = 2
-        elif mode in {"redirect-downgrade", "redirect-status-disabled"}:
+        elif mode in {
+            "redirect-cross-origin-terminal",
+            "redirect-downgrade",
+            "redirect-status-disabled",
+        }:
             request_count = 1
         else:
             request_count = 2
@@ -140,7 +145,10 @@ try:
                 status = redirect_statuses.get(mode, 302)
                 content_type = None
                 body = b""
-                if mode == "redirect-cross-origin":
+                if mode in {
+                    "redirect-cross-origin",
+                    "redirect-cross-origin-terminal",
+                }:
                     location = f"https://localhost:{listener.getsockname()[1]}/events"
                 elif mode in {"redirect-downgrade", "redirect-downgrade-allowed"}:
                     host = "localhost" if mode == "redirect-downgrade-allowed" else "127.0.0.1"

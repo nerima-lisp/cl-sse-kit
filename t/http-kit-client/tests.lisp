@@ -695,7 +695,7 @@
         (multiple-value-bind
             (events errors request-count retry-count records subscription)
             (%run-http-fixture
-             "redirect-cross-origin"
+             "redirect-cross-origin-terminal"
              :auth-provider
              (lambda (request)
                (declare (ignore request))
