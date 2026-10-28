@@ -10,7 +10,7 @@
     };
 
     cl-http-message-kit = {
-      url = "github:nerima-lisp/cl-http-message-kit/v2.0.0";
+      url = "github:nerima-lisp/cl-http-message-kit/v2.0.1";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-weave.follows = "cl-weave";
       inputs.cl-hpack-codec-kit.follows = "cl-hpack-codec-kit";
@@ -23,7 +23,7 @@
     };
 
     cl-http-kit = {
-      url = "github:nerima-lisp/cl-http-kit/2d85f0c423f59811773f9412b950a539c5ffbdc7";
+      url = "github:nerima-lisp/cl-http-kit/d332c596075af799a0d8ed908293c7477cb43f70";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-weave.follows = "cl-weave";
       inputs.cl-http-message-kit.follows = "cl-http-message-kit";
@@ -36,6 +36,7 @@
       inputs.cl-deflate-kit.follows = "cl-deflate-kit";
       inputs.cl-tls-kit.follows = "cl-tls-kit";
       inputs.cl-crypto-kit.follows = "cl-crypto-kit";
+      inputs.cl-quic-kit.follows = "cl-quic-kit";
     };
 
     cl-deflate-kit = {
@@ -50,10 +51,17 @@
     };
 
     cl-tls-kit = {
-      url = "github:nerima-lisp/cl-tls-kit/v0.1.2";
+      url = "github:nerima-lisp/cl-tls-kit/v0.5.2";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-weave.follows = "cl-weave";
       inputs.cl-crypto-kit.follows = "cl-crypto-kit";
+    };
+
+    cl-quic-kit = {
+      url = "github:nerima-lisp/cl-quic-kit/v0.2.7";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.cl-crypto-kit.follows = "cl-crypto-kit";
+      inputs.cl-tls-kit.follows = "cl-tls-kit";
     };
 
     cl-resilience-kit = {
@@ -87,6 +95,7 @@
       cl-host-kit,
       cl-deflate-kit,
       cl-tls-kit,
+      cl-quic-kit,
       cl-crypto-kit,
       cl-weave,
       ...
@@ -95,6 +104,7 @@
       clHttpKit = cl-http-kit.outPath;
       clDeflate = cl-deflate-kit.outPath;
       clTls = cl-tls-kit.outPath;
+      clQuic = cl-quic-kit.outPath;
       clCrypto = cl-crypto-kit;
       systems = [
         "aarch64-darwin"
@@ -153,7 +163,7 @@
             shellHook = ''
               export CL_SOURCE_REGISTRY="''${CL_SOURCE_REGISTRY:-$PWD//:${cl-codec-kit.outPath}//:${cl-http-message-kit.outPath}//:${
                 cl-hpack-codec-kit.packages.${system}.default
-              }/share/common-lisp/source//:${cl-resilience-kit.outPath}//:${cl-boundary-kit.outPath}//:${cl-concurrent-kit.outPath}//:${cl-date-kit.outPath}//:${cl-host-kit.outPath}//:${cl-weave.outPath}//:${clHttpKit}//:${clDeflate}//:${clTls}//:${clCrypto}//}"
+                }/share/common-lisp/source//:${cl-resilience-kit.outPath}//:${cl-boundary-kit.outPath}//:${cl-concurrent-kit.outPath}//:${cl-date-kit.outPath}//:${cl-host-kit.outPath}//:${cl-weave.outPath}//:${clHttpKit}//:${clDeflate}//:${clTls}//:${clCrypto}//:${clQuic}//}"
             '';
           };
         }
@@ -183,6 +193,7 @@
             "${clHttpKit}/cl-http-kit.asd"
             "${clDeflate}/cl-deflate-kit.asd"
             "${clTls}/cl-tls-kit.asd"
+            "${clQuic}/cl-quic-kit.asd"
             "${clCrypto}/cl-crypto-kit.asd"
           ];
           asdLoadOptions = builtins.concatStringsSep " " (map (path: "--load ${path}") asdFiles);

@@ -248,7 +248,11 @@ to stop the subscription, call `stop-http-sse-subscription` and then
 
 `subscribe-http-sse` returns immediately and calls `handle-event` on its worker
 thread. It reuses the supplied HTTP client for reconnects, retaining that
-client's cookie jar, proxy, TLS, redirect, timeout, and response-size settings.
+client's cookie jar, proxy, TLS, timeout, response-size, and redirect-policy
+settings. The adapter follows permitted redirect hops and waits for each hop's
+response to finish so the HTTP client's cookie jar can accept its `Set-Cookie`
+headers before the next request. Redirect response bodies are not sent to the
+SSE parser.
 The adapter respects the retry policy's attempt limit by default. Set
 `:retry-forever-p t` to opt into retries beyond that limit when the policy still
 classifies a condition as retryable.
@@ -271,15 +275,20 @@ the HTTP client's default timeout applies. Set a finite `:max-body-bytes` limit
 larger than the expected bytes for one connection; the client enforces that
 limit even when body collection is disabled.
 
-The cl-http-kit client exposes its final status and response headers after the
-body callback completes. The adapter therefore dispatches body events before
-it can validate status and `Content-Type`; an error response containing
-event-shaped text may reach `handle-event` before its response is rejected.
-Likewise, `stop-http-sse-subscription` wakes a worker waiting to reconnect, but
-cannot close an active cl-http-kit request through its public API. During a
-request it takes effect at the next body chunk, or after the configured
-request timeout. `wait-http-sse-subscription` returns the subscription when
-the worker has finished and `NIL` if its own optional `:timeout` expires.
+The adapter validates the final response status and `Content-Type` in the
+cl-http-kit response-headers callback, before it passes any body chunk to the
+SSE parser. It accepts 2xx responses with a valid `text/event-stream` content
+type. A valid 204 response ends the subscription without reconnecting. Invalid
+responses are cancelled before parsing and then handled by the configured
+retry policy.
+
+`stop-http-sse-subscription` cancels the active request with a fresh
+cl-http-kit cancellation token and wakes a worker waiting to reconnect. Stop
+latency depends on the transport: built-in HTTP/3 cancellation is unsupported,
+and an HTTP/2 request waiting on a blocked frame read may wait for data or its
+deadline before the worker exits. `wait-http-sse-subscription` returns the
+subscription when the worker has finished and `NIL` if its own optional
+`:timeout` expires.
 
 ## Transport adapter checklist
 
