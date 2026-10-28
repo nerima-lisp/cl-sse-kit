@@ -116,10 +116,11 @@ try:
                 ])
                 chunk = f"{len(body):X}\r\n".encode("ascii") + body + b"\r\n"
                 stream.sendall("".join(response).encode("ascii") + chunk)
+                stream.settimeout(3)
                 try:
                     while stream.recv(4096):
                         pass
-                except ssl.SSLError:
+                except (ssl.SSLError, socket.timeout):
                     pass
             else:
                 response.extend([

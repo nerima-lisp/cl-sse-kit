@@ -641,11 +641,11 @@
 
           (it "stops an active request within a bounded interval"
               (let ((subscription nil)
-                    (ready (cl-concurrent-kit:make-semaphore))
                     (received (cl-concurrent-kit:make-semaphore))
                     (events nil)
                     (request-count 0)
-                    (records nil))
+                    (records nil)
+                    (finished-p nil))
                 (multiple-value-bind (ignored server-records)
                     (%call-with-https-server
                      "active-stop"
@@ -660,25 +660,28 @@
                                 (format nil "https://127.0.0.1:~D/events" port)
                                 (lambda (event)
                                   (push event events)
-                                  (unless (cl-concurrent-kit:wait-on-semaphore
-                                           ready :timeout 5)
-                                    (error "Subscription startup was not released."))
-                                  (sse-kit/http-kit-client:stop-http-sse-subscription
-                                   subscription)
                                   (cl-concurrent-kit:signal-semaphore received))
                                 :http-client client
-                                :retry-policy (%test-retry-policy))))
-                       (cl-concurrent-kit:signal-semaphore ready)
-                       (unless (cl-concurrent-kit:wait-on-semaphore
-                                received :timeout 5)
-                         (error "The active SSE response was not dispatched."))
-                       (expect (not (null (sse-kit/http-kit-client:wait-http-sse-subscription subscription :timeout 2))) :to-equalp t)
-
-                       t))
+                                :retry-policy (%test-retry-policy)))
+                         (unless (cl-concurrent-kit:wait-on-semaphore
+                                  received :timeout 5)
+                           (error "The active SSE response was not dispatched."))
+                         (sse-kit/http-kit-client:stop-http-sse-subscription subscription)
+                         (setf finished-p
+                               (not (null
+                                     (sse-kit/http-kit-client:wait-http-sse-subscription
+                                      subscription :timeout 2))))
+                         t)))
                   (declare (ignore ignored))
-                  (setf records server-records)) (expect (length events) :to-equalp 1) (expect (sse-kit:http-sse-event-data (first events)) :to-equalp "active") (expect request-count :to-equalp 1) (expect (length records) :to-equalp 1) (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
-                       subscription)
-                      :to-equalp t))))
+                  (setf records server-records))
+                (expect finished-p :to-equalp t)
+                (expect (length events) :to-equalp 1)
+                (expect (sse-kit:http-sse-event-data (first events)) :to-equalp "active")
+                (expect request-count :to-equalp 1)
+                (expect (length records) :to-equalp 1)
+                (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
+                         subscription)
+                        :to-equalp t))))
 
 (defun run-tests ()
   (unless (run-all :reporter :spec
