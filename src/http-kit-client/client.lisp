@@ -72,7 +72,7 @@
 (defun stop-http-sse-subscription (subscription &optional (reason :stopped))
   "Stop the subscription, cancel its active request, and wake retry waits.
 
-The active request is cancelled through cl-http-kit/client's cancellation token.
+The active request uses the cl-http-kit/client cancellation token.
 Transport cancellation latency depends on the active protocol."
   (let ((subscription (%check-subscription subscription))
         (protocol-client nil)
@@ -90,10 +90,11 @@ Transport cancellation latency depends on the active protocol."
     (when wake-worker-p
       (cl-concurrent-kit:signal-semaphore
        (%subscription-stop-semaphore subscription)))
-    (when cancel-token
-      (http-kit/client:http-client-cancel-request cancel-token))
-    (when protocol-client
-      (sse-kit:stop-http-sse-client protocol-client reason))
+    (unwind-protect
+         (when cancel-token
+           (http-kit/client:http-client-cancel-request cancel-token))
+      (when protocol-client
+        (sse-kit:stop-http-sse-client protocol-client reason)))
     subscription))
 
 (defun wait-http-sse-subscription (subscription &key (timeout nil timeout-p))
@@ -269,8 +270,14 @@ Transport cancellation latency depends on the active protocol."
                                              (condition
                                               (setf response-kind :invalid
                                                     response-condition condition)
-                                              (http-kit/client:http-client-cancel-request
-                                               cancel-token))
+                                              (handler-case
+                                                (http-kit/client:http-client-cancel-request
+                                                 cancel-token)
+                                                (error (cancel-condition)
+                                                  (setf response-condition
+                                                    (%response-condition
+                                                     status headers
+                                                     cancel-condition)))))
                                              (t
                                               (setf response-kind :sse))))))
                                  :on-body-chunk
@@ -328,19 +335,23 @@ Transport cancellation latency depends on the active protocol."
                              nil)))))))))
 ))
 
-(defun %response-condition (status headers)
+(defun %response-condition (status headers &optional cancellation-condition)
   (let ((content-type (http-kit:http-header-value headers "content-type")))
     (cond
       ((not (<= 200 status 299))
        (make-condition 'sse-kit:sse-http-error
                        :message "An SSE response must have a 2xx HTTP status."
                        :operation :http-response
+                       :detail (when cancellation-condition
+                                 (list :cancellation-error cancellation-condition))
                        :status status
                        :headers headers))
       ((not (sse-kit:http-sse-content-type-valid-p content-type))
        (make-condition 'sse-kit:sse-http-error
                        :message "An SSE response must have a valid text/event-stream content type."
                        :operation :http-response
+                       :detail (when cancellation-condition
+                                 (list :cancellation-error cancellation-condition))
                        :status status
                        :headers headers))
       ((= status 204) :no-content))))
