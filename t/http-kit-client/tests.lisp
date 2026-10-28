@@ -483,45 +483,53 @@
               :to-equalp nil))))
 (describe "FR-006 response headers and request cancellation"
           (it "rejects invalid response headers before dispatching event-shaped bodies"
-              (dolist (case (list (list "invalid-status" 500)
-                                  (list "invalid-content-type" 200)))
-                (let ((subscription nil)
-                      (events nil)
-                      (request-count 0)
-                      (error-count 0)
-                      (records nil))
-                  (multiple-value-bind (ignored server-records)
-                      (%call-with-https-server
-                       (first case)
-                       (lambda (port)
-                         (let ((client
-                                (%make-test-http-client
-                                 (lambda (request attempt)
-                                   (declare (ignore request attempt))
-                                   (incf request-count)))))
-                           (setf subscription
-                                 (sse-kit/http-kit-client:subscribe-http-sse
-                                  (format nil "https://127.0.0.1:~D/events" port)
-                                  (lambda (event) (push event events))
-                                  :http-client client
-                                  :retry-policy (%test-retry-policy)
-                                  :on-error (lambda (condition)
-                                              (declare (ignore condition))
-                                              (incf error-count))))
-                           (unless (sse-kit/http-kit-client:wait-http-sse-subscription
-                                    subscription :timeout 10)
-                             (error "The invalid response subscription did not finish."))
-                           t)))
-                    (declare (ignore ignored))
-                    (setf records server-records))
-                  (expect events :to-equalp nil)
-                  (expect error-count :to-equalp 3)
-                  (expect request-count :to-equalp 3)
-                  (expect (length records) :to-equalp 3)
-                  (expect (sse-kit:sse-http-error-status
-                           (sse-kit/http-kit-client:http-sse-subscription-error
-                            subscription))
-                          :to-equalp (second case)))))
+  (let ((results nil))
+    (dolist (case (list (list "invalid-status" 500)
+                        (list "invalid-content-type" 200)))
+      (let ((subscription nil)
+            (events nil)
+            (request-count 0)
+            (error-count 0)
+            (records nil))
+        (multiple-value-bind (ignored server-records)
+            (%call-with-https-server
+             (first case)
+             (lambda (port)
+               (let ((client
+                       (%make-test-http-client
+                        (lambda (request attempt)
+                          (declare (ignore request attempt))
+                          (incf request-count)))))
+                 (setf subscription
+                       (sse-kit/http-kit-client:subscribe-http-sse
+                        (format nil "https://127.0.0.1:~D/events" port)
+                        (lambda (event)
+                          (push event events))
+                        :http-client client
+                        :retry-policy (%test-retry-policy)
+                        :on-error
+                        (lambda (condition)
+                          (declare (ignore condition))
+                          (incf error-count))))
+                 (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                          subscription :timeout 10)
+                   (error "The invalid response subscription did not finish."))
+                 t)))
+          (declare (ignore ignored))
+          (setf records server-records))
+        (push (list (first case)
+                    events
+                    error-count
+                    request-count
+                    (length records)
+                    (sse-kit:sse-http-error-status
+                     (sse-kit/http-kit-client:http-sse-subscription-error
+                      subscription)))
+              results)))
+    (expect (nreverse results)
+            :to-equalp
+            (list (list "invalid-status" nil 3 3 3 500)
+                  (list "invalid-content-type" nil 3 3 3 200)))))
 
           (it "accepts a non-200 2xx SSE response"
               (let ((subscription nil)

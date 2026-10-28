@@ -108,18 +108,25 @@ try:
             if content_type:
                 response.append(f"Content-Type: {content_type}\r\n")
             response.extend(f"{name}: {value}\r\n" for name, value in extra_headers)
-            content_length = 1000000 if mode == "active-stop" else len(body)
-            response.extend([
-                f"Content-Length: {content_length}\r\n",
-                "Connection: close\r\n",
-                "\r\n",
-            ])
-            stream.sendall("".join(response).encode("ascii") + body)
             if mode == "active-stop":
+                response.extend([
+                    "Transfer-Encoding: chunked\r\n",
+                    "Connection: close\r\n",
+                    "\r\n",
+                ])
+                chunk = f"{len(body):X}\r\n".encode("ascii") + body + b"\r\n"
+                stream.sendall("".join(response).encode("ascii") + chunk)
                 try:
                     while stream.recv(4096):
                         pass
                 except ssl.SSLError:
                     pass
+            else:
+                response.extend([
+                    f"Content-Length: {len(body)}\r\n",
+                    "Connection: close\r\n",
+                    "\r\n",
+                ])
+                stream.sendall("".join(response).encode("ascii") + body)
 finally:
     listener.close()
