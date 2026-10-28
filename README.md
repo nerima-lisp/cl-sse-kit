@@ -278,17 +278,21 @@ limit even when body collection is disabled.
 The adapter validates the final response status and `Content-Type` in the
 cl-http-kit response-headers callback, before it passes any body chunk to the
 SSE parser. It accepts 2xx responses with a valid `text/event-stream` content
-type. A valid 204 response ends the subscription without reconnecting. Invalid
-responses are cancelled before parsing and then handled by the configured
-retry policy.
+type. A 204 response with a valid event-stream content type ends the
+subscription without reconnecting. Invalid statuses or content types, including
+a 204 without a valid content type, are cancelled before parsing and then
+handled by the configured retry policy.
 
 `stop-http-sse-subscription` cancels the active request with a fresh
 cl-http-kit cancellation token and wakes a worker waiting to reconnect. Stop
 latency depends on the transport: built-in HTTP/3 cancellation is unsupported,
-and an HTTP/2 request waiting on a blocked frame read may wait for data or its
-deadline before the worker exits. `wait-http-sse-subscription` returns the
-subscription when the worker has finished and `NIL` if its own optional
-`:timeout` expires.
+and an HTTP/2 or HTTP/3 request waiting on a blocked frame read may wait for data
+or its deadline before the worker exits. Passing `:timeout NIL` removes that
+request deadline, so a blocked HTTP/2 or HTTP/3 read has no finite stop bound.
+See the pinned [cl-http-kit client API reference](https://github.com/nerima-lisp/cl-http-kit/blob/d332c596075af799a0d8ed908293c7477cb43f70/docs/src/reference/api.md)
+for the request timeout and cancellation details. `wait-http-sse-subscription`
+returns the subscription when the worker has finished and `NIL` if its own
+optional `:timeout` expires.
 
 ## Transport adapter checklist
 
