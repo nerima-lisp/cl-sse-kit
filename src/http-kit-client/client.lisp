@@ -166,19 +166,30 @@ Transport cancellation latency depends on the active protocol."
                 (map 'string #'code-char
                      (http-kit/client:http-utf8-octets last-event-id))))))))
 (defun %subscription-redirect-request
-    (client current-request initial-uri response redirect-count)
+    (client protocol-client current-request initial-uri response redirect-count)
   (let* ((policy (http-kit/client:http-client-redirect-policy client))
          (current-uri (http-kit:http-request-uri current-request))
          (location
-           (http-kit:http-header-value
-            (http-kit:http-response-headers response) "location"))
-         (target (http-kit/client:resolve-http-uri current-uri location))
+          (http-kit:http-header-value
+           (http-kit:http-response-headers response) "location"))
+         (resolved-target
+          (http-kit/client:resolve-http-uri current-uri location))
+         (strict-transport-store
+          (http-kit/client:http-client-strict-transport-store client))
+         (target
+          (if strict-transport-store
+              (http-kit/client:http-strict-transport-store-upgrade-uri
+               strict-transport-store resolved-target)
+            resolved-target))
          (downgrade-p
-           (and (string-equal (http-kit:http-uri-scheme current-uri) "https")
-                (string-equal (http-kit:http-uri-scheme target) "http")))
-         (remove-names '("cookie" "proxy-authorization")))
+          (and (string-equal (http-kit:http-uri-scheme current-uri) "https")
+               (string-equal (http-kit:http-uri-scheme target) "http")))
+         (transport-headers (%transport-headers protocol-client))
+         (remove-names
+          (append '("cookie" "proxy-authorization")
+                  (mapcar #'http-kit:http-header-name transport-headers))))
     (when (>= redirect-count
-             (http-kit/client:http-redirect-policy-max-redirects policy))
+              (http-kit/client:http-redirect-policy-max-redirects policy))
       (error 'http-kit/client:http-redirect-limit-exceeded
              :message "The HTTP redirect policy exhausted its redirect limit."
              :operation :redirect
@@ -192,10 +203,18 @@ Transport cancellation latency depends on the active protocol."
              :message "The redirect policy rejected an HTTPS to HTTP downgrade."
              :operation :redirect
              :detail target))
-    (unless (or (http-kit/client:http-redirect-policy-preserve-authorization-p
-                 policy)
-                (http-kit/client:http-same-origin-p initial-uri target))
-      (push "authorization" remove-names))
+    (unless (http-kit/client:http-same-origin-p initial-uri target)
+      (when (http-kit/client:http-client-auth-provider client)
+        (error 'http-kit/client:http-client-error
+               :message "The adapter cannot safely follow a cross-origin redirect when an origin auth provider is configured."
+               :operation :redirect
+               :detail (list :target target :reason :cross-origin-auth-provider)))
+      (setf remove-names
+            (append
+             (mapcar #'http-kit:http-header-name
+                     (http-kit/client:http-client-default-headers client))
+             '("authorization" "x-api-key" "x-auth-token" "api-key")
+             remove-names)))
     (unless (http-kit/client:http-same-origin-p current-uri target)
       (setf remove-names
             (append '("host" "origin" "referer") remove-names)))
@@ -204,11 +223,13 @@ Transport cancellation latency depends on the active protocol."
      :protocol-version (http-kit:http-request-protocol-version current-request)
      :uri target
      :headers
-     (remove-if
-      (lambda (header)
-        (member (http-kit:http-header-name header) remove-names
-                :test #'string-equal))
-      (http-kit:http-request-headers current-request))
+     (append
+      (remove-if
+       (lambda (header)
+         (member (http-kit:http-header-name header) remove-names
+                 :test #'string-equal))
+       (http-kit:http-request-headers current-request))
+      transport-headers)
      :trailers (http-kit:http-request-trailers current-request)
      :body (http-kit:http-request-body current-request))))
 
@@ -220,6 +241,7 @@ Transport cancellation latency depends on the active protocol."
             client "GET" (%subscription-url subscription)
             :headers (%transport-headers protocol-client)))
          (initial-uri (http-kit:http-request-uri initial-request))
+         (cookie-same-site-p t)
          (timeout-p (%subscription-request-timeout-p subscription)))
     (block request-loop
       (loop with request = initial-request
@@ -270,13 +292,13 @@ Transport cancellation latency depends on the active protocol."
                                               (setf response-kind :invalid
                                                     response-condition condition)
                                               (handler-case
-                                                (http-kit/client:http-client-cancel-request
-                                                 cancel-token)
+                                                  (http-kit/client:http-client-cancel-request
+                                                   cancel-token)
                                                 (error (cancel-condition)
                                                   (setf response-condition
-                                                    (%response-condition
-                                                     status headers
-                                                     cancel-condition)))))
+                                                        (%response-condition
+                                                         status headers
+                                                         cancel-condition)))))
                                              (t
                                               (setf response-kind :sse)))))))
                                  :on-body-chunk
@@ -295,7 +317,10 @@ Transport cancellation latency depends on the active protocol."
                           (handler-case
                               (multiple-value-bind (response effective-request)
                                   (apply #'http-kit/client:http-client-send
-                                         client request options)
+                                         client request
+                                         (append options
+                                                 (list :cookie-same-site-p
+                                                       cookie-same-site-p)))
                                 (cond
                                   ((eq response-kind :redirect)
                                    (when (%subscription-on-redirect subscription)
@@ -304,13 +329,27 @@ Transport cancellation latency depends on the active protocol."
                                               redirect-location response))
                                    (when (%subscription-stopped-p* subscription)
                                      (return-from request-loop nil))
-                                   (setf request
-                                         (%subscription-redirect-request
-                                          client
-                                          (or effective-request request)
-                                          initial-uri
-                                          response
-                                          redirect-count))
+                                   (let* ((previous-request
+                                            (or effective-request request))
+                                          (previous-uri
+                                            (http-kit:http-request-uri
+                                             previous-request))
+                                          (next-request
+                                            (%subscription-redirect-request
+                                             client protocol-client previous-request
+                                             initial-uri response redirect-count))
+                                          (previous-uri-scheme
+                                            (http-kit:http-uri-scheme previous-uri))
+                                          (next-uri
+                                            (http-kit:http-request-uri next-request)))
+                                     (unless (and (string-equal
+                                                   previous-uri-scheme
+                                                   (http-kit:http-uri-scheme next-uri))
+                                                  (string-equal
+                                                   (http-kit:http-uri-host previous-uri)
+                                                   (http-kit:http-uri-host next-uri)))
+                                       (setf cookie-same-site-p nil))
+                                     (setf request next-request))
                                    (incf redirect-count))
                                   ((eq response-kind :invalid)
                                    (error response-condition))
@@ -326,23 +365,23 @@ Transport cancellation latency depends on the active protocol."
                                (t
                                 (error condition))))
                             (error (condition)
-                             (if (eq response-kind :invalid)
-                                 (error response-condition)
-                                 (error condition))))
+                              (if (eq response-kind :invalid)
+                                  (error response-condition)
+                                  (error condition)))))
                    (cl-concurrent-kit:with-lock-held
                        ((%subscription-lock subscription))
                      (when (eq (%subscription-active-request-token subscription)
                                cancel-token)
                        (setf (%subscription-active-request-token subscription)
                              nil)))))))))
-))
+)
 
 (defun %response-condition (status headers &optional cancellation-condition)
   (let ((content-type (http-kit:http-header-value headers "content-type")))
     (cond
-      ((not (<= 200 status 299))
+      ((not (member status (list 200 204) :test (function =)))
        (make-condition 'sse-kit:sse-http-error
-                       :message "An SSE response must have a 2xx HTTP status."
+                       :message "An SSE response must have HTTP status 200 or 204."
                        :operation :http-response
                        :detail (when cancellation-condition
                                  (list :cancellation-error cancellation-condition))
@@ -384,8 +423,26 @@ Transport cancellation latency depends on the active protocol."
         (setf response (%request-sse-response subscription parser))
       (error (condition)
         (unless callback-condition
-          (return-from %perform-subscription-attempt
-            (values condition nil)))))
+          (if (or (and (typep condition (quote sse-kit:sse-http-error))
+                       (eq (sse-kit:sse-error-operation condition) :http-response))
+                   (and (typep condition (quote http-kit/client:http-client-error))
+                        (eq (http-kit:http-error-operation condition) :redirect)))
+              (progn
+                (%set-subscription-error subscription condition)
+                (unwind-protect
+                     (when (%subscription-on-error subscription)
+                       (funcall (%subscription-on-error subscription)
+                                condition))
+                  (stop-http-sse-subscription
+                    subscription
+                    (if (and (typep condition (quote http-kit/client:http-client-error))
+                             (eq (http-kit:http-error-operation condition) :redirect))
+                        :redirect-policy-error
+                        :invalid-response)))
+                (return-from %perform-subscription-attempt
+                  (values condition t)))
+              (return-from %perform-subscription-attempt
+                (values condition nil))))))
     (when callback-condition
       (%set-subscription-error subscription callback-condition)
       (when (%subscription-on-error subscription)

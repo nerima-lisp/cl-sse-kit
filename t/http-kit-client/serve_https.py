@@ -25,27 +25,22 @@ responses = {
     ],
     "invalid-status": [
         (500, "text/event-stream", b"event: rejected\ndata: status\n\n", []),
-        (500, "text/event-stream", b"event: rejected\ndata: status\n\n", []),
-        (500, "text/event-stream", b"event: rejected\ndata: status\n\n", []),
+    ],
+    "non-200-status": [
+        (202, "text/event-stream", b"event: rejected\ndata: status\n\n", []),
     ],
     "invalid-content-type": [
         (200, "text/plain", b"event: rejected\ndata: content-type\n\n", []),
-        (200, "text/plain", b"event: rejected\ndata: content-type\n\n", []),
-        (200, "text/plain", b"event: rejected\ndata: content-type\n\n", []),
     ],
-    "retry-fresh-token": [
-        (500, "text/event-stream", b"event: rejected\ndata: stale-token\n\n", []),
-        (200, "text/event-stream", b"event: ready\ndata: recovered\nid: retry-id\n\n", []),
-    ],
-    "accepted-2xx": [
-        (202, "text/event-stream", b"event: accepted\ndata: created\n\n", []),
+    "redirect-invalid-final": [
+        (302, None, b"", [("Location", "/events")]),
+        (200, "text/plain", b"event: rejected\ndata: content-type\n\n", []),
     ],
     "valid-204": [
         (204, "text/event-stream", b"", []),
     ],
     "invalid-204-content-type": [
         (204, "text/plain", b"", []),
-        (200, "text/event-stream", b"event: recovered\ndata: recovered\n\n", []),
     ],
     "active-stop": [
         (200, "text/event-stream", b"data: active\n\n", []),
@@ -53,6 +48,25 @@ responses = {
     "callback-error": [
         (200, "text/event-stream", b"data: callback\nid: callback-id\n\n", []),
     ],
+}
+
+redirect_statuses = {
+    "redirect-301": 301,
+    "redirect-302": 302,
+    "redirect-303": 303,
+    "redirect-307": 307,
+    "redirect-308": 308,
+}
+redirect_modes = set(redirect_statuses) | {
+    "redirect",
+    "redirect-cross-origin",
+    "redirect-downgrade",
+    "redirect-downgrade-allowed",
+    "redirect-hsts",
+    "redirect-invalid-final",
+    "redirect-limit",
+    "redirect-configured-limit",
+    "redirect-status-disabled",
 }
 
 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -64,14 +78,29 @@ listener.listen()
 print(listener.getsockname()[1], flush=True)
 
 try:
-    if mode == "redirect":
-        request_count = 2
+    if mode in redirect_modes:
+        if mode == "redirect-limit":
+            request_count = 11
+        elif mode == "redirect-configured-limit":
+            request_count = 2
+        elif mode in {"redirect-downgrade", "redirect-status-disabled"}:
+            request_count = 1
+        else:
+            request_count = 2
     else:
         request_count = len(responses[mode])
 
     for index in range(request_count):
         connection, _ = listener.accept()
-        with connection, context.wrap_socket(connection, server_side=True) as stream:
+        use_plain_stream = (
+            mode == "redirect-downgrade-allowed" and index == 1
+        )
+        stream = (
+            connection
+            if use_plain_stream
+            else context.wrap_socket(connection, server_side=True)
+        )
+        with stream:
             request = bytearray()
             while b"\r\n\r\n" not in request:
                 chunk = stream.recv(4096)
@@ -94,23 +123,63 @@ try:
                 "at": time.monotonic(),
             }, separators=(",", ":")), flush=True)
 
-            if mode == "redirect" and index == 0:
+            if mode == "retry-limit" and index < 2:
+                continue
+
+            if mode in {"redirect-limit", "redirect-configured-limit"}:
                 status = 302
                 content_type = None
                 body = b""
+                extra_headers = [("Location", "/redirect-limit")]
+            elif mode == "redirect-status-disabled":
+                status = 302
+                content_type = "text/event-stream"
+                body = b"event: rejected\ndata: status\n\n"
+                extra_headers = [("Location", "/events")]
+            elif mode in redirect_modes and index == 0:
+                status = redirect_statuses.get(mode, 302)
+                content_type = None
+                body = b""
+                if mode == "redirect-cross-origin":
+                    location = f"https://localhost:{listener.getsockname()[1]}/events"
+                elif mode in {"redirect-downgrade", "redirect-downgrade-allowed"}:
+                    host = "localhost" if mode == "redirect-downgrade-allowed" else "127.0.0.1"
+                    location = f"http://{host}:{listener.getsockname()[1]}/events"
+                elif mode == "redirect-hsts":
+                    location = f"http://localhost:{listener.getsockname()[1]}/events"
+                else:
+                    location = "/events"
                 extra_headers = [
-                    ("Location", "/events"),
+                    ("Location", location),
                     ("Set-Cookie", "sid=loopback; Path=/; Secure"),
                 ]
-            elif mode == "redirect":
+                if mode == "redirect-downgrade-allowed":
+                    extra_headers.extend([
+                        ("Set-Cookie", "lax=scheme; Path=/; SameSite=Lax"),
+                        ("Set-Cookie", "strict=scheme; Path=/; SameSite=Strict"),
+                    ])
+            elif mode in redirect_modes:
                 status = 200
-                content_type = "text/event-stream"
-                body = b"event: redirected\ndata: followed\nid: redirect-id\n\n"
+                content_type = (
+                    "text/plain" if mode == "redirect-invalid-final" else "text/event-stream"
+                )
+                body = (
+                    b"event: rejected\ndata: content-type\n\n"
+                    if mode == "redirect-invalid-final"
+                    else b"event: redirected\ndata: followed\nid: redirect-id\n\n"
+                )
                 extra_headers = []
             else:
                 status, content_type, body, extra_headers = responses[mode][index]
 
-            reason = {302: "Found", 204: "No Content"}.get(status, "OK")
+            reason = {
+                204: "No Content",
+                301: "Moved Permanently",
+                302: "Found",
+                303: "See Other",
+                307: "Temporary Redirect",
+                308: "Permanent Redirect",
+            }.get(status, "OK")
             response = [f"HTTP/1.1 {status} {reason}\r\n"]
             if content_type:
                 response.append(f"Content-Type: {content_type}\r\n")
