@@ -166,7 +166,7 @@ Transport cancellation latency depends on the active protocol."
                 (map 'string #'code-char
                      (http-kit/client:http-utf8-octets last-event-id))))))))
 (defun %subscription-redirect-request
-    (client current-request initial-uri protocol-client response redirect-count)
+    (client current-request initial-uri response redirect-count)
   (let* ((policy (http-kit/client:http-client-redirect-policy client))
          (current-uri (http-kit:http-request-uri current-request))
          (location
@@ -177,7 +177,6 @@ Transport cancellation latency depends on the active protocol."
            (and (string-equal (http-kit:http-uri-scheme current-uri) "https")
                 (string-equal (http-kit:http-uri-scheme target) "http")))
          (remove-names '("cookie" "proxy-authorization")))
-    (declare (ignore protocol-client))
     (when (>= redirect-count
              (http-kit/client:http-redirect-policy-max-redirects policy))
       (error 'http-kit/client:http-redirect-limit-exceeded
@@ -279,7 +278,7 @@ Transport cancellation latency depends on the active protocol."
                                                      status headers
                                                      cancel-condition)))))
                                              (t
-                                              (setf response-kind :sse))))))
+                                              (setf response-kind :sse)))))))
                                  :on-body-chunk
                                  (lambda (chunk)
                                    (when (and (eq response-kind :sse)
@@ -310,7 +309,6 @@ Transport cancellation latency depends on the active protocol."
                                           client
                                           (or effective-request request)
                                           initial-uri
-                                          protocol-client
                                           response
                                           redirect-count))
                                    (incf redirect-count))
@@ -326,7 +324,11 @@ Transport cancellation latency depends on the active protocol."
                                ((%subscription-stopped-p* subscription)
                                 (return-from request-loop nil))
                                (t
-                                (error condition))))))
+                                (error condition))))
+                            (error (condition)
+                             (if (eq response-kind :invalid)
+                                 (error response-condition)
+                                 (error condition))))
                    (cl-concurrent-kit:with-lock-held
                        ((%subscription-lock subscription))
                      (when (eq (%subscription-active-request-token subscription)

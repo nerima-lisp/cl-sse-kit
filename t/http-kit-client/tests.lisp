@@ -1,4 +1,5 @@
 (in-package #:sse-kit/http-kit-client/test)
+(defvar *https-test-trust-anchors* nil)
 
 (defun %read-lines (stream)
   (loop for line = (read-line stream nil nil)
@@ -19,7 +20,8 @@
    :close-stream #'http-kit/network:close-http-tcp-stream
    :tls-upgrade
    (http-kit/tls:make-http-tls-upgrader
-    :verify nil
+    :verify :required
+    :trust-anchors *https-test-trust-anchors*
     :alpn-protocols '("http/1.1"))
    :strict-transport-store nil
    :alternative-service-store nil
@@ -45,7 +47,8 @@
         (key nil)
         (process nil)
         (output nil)
-        (error-output nil))
+        (error-output nil)
+        (trust-anchor nil))
     (unwind-protect
          (progn
            (setf directory
@@ -63,6 +66,12 @@
                   "-keyout" key "-out" certificate)
             :output :string
             :error-output :string)
+           (setf trust-anchor
+                 (cl-tls-kit.x509:parse-certificate-der
+                  (cl-tls-kit:pem-block-der
+                   (first
+                    (cl-tls-kit:pem-decode
+                     (uiop:read-file-string certificate))))))
            (setf process
                  (uiop:launch-program
                   (list "python3"
@@ -87,7 +96,8 @@
                                (%read-lines error-output))))))
                   (value
                     (handler-case
-                        (funcall thunk port)
+                        (let ((*https-test-trust-anchors* (list trust-anchor)))
+                          (funcall thunk port))
                       (error (condition)
                         (when process
                           (ignore-errors (uiop:terminate-process process))
@@ -156,11 +166,10 @@
                                   (declare (ignore condition))
                                   (push delay retry-delays))))
                (cl-concurrent-kit:signal-semaphore ready)
-               (dotimes (index 2)
-                 (declare (ignore index))
-                 (unless (cl-concurrent-kit:wait-on-semaphore
-                          received :timeout 10)
-                   (error "Timed out waiting for SSE events.")))
+               (loop repeat 2
+                     do (unless (cl-concurrent-kit:wait-on-semaphore
+                                 received :timeout 10)
+                          (error "Timed out waiting for SSE events.")))
                (unless (sse-kit/http-kit-client:wait-http-sse-subscription
                         subscription :timeout 5)
                  (error "The subscription worker did not finish."))
@@ -584,6 +593,99 @@
                 (expect error-count :to-equalp 1)
                 (expect request-count :to-equalp 1)
                 (expect (length records) :to-equalp 1)))
+          (it "ends at a valid 204 response without dispatching or reconnecting"
+              (let ((subscription nil)
+                    (events nil)
+                    (error-count 0)
+                    (request-count 0)
+                    (records nil))
+                (multiple-value-bind (ignored server-records)
+                    (%call-with-https-server
+                     "valid-204"
+                     (lambda (port)
+                       (let ((client
+                              (%make-test-http-client
+                               (lambda (request attempt)
+                                 (declare (ignore request attempt))
+                                 (incf request-count)))))
+                         (setf subscription
+                               (sse-kit/http-kit-client:subscribe-http-sse
+                                (format nil "https://127.0.0.1:~D/events" port)
+                                (lambda (event) (push event events))
+                                :http-client client
+                                :retry-policy (%test-retry-policy)
+                                :on-error (lambda (condition)
+                                            (declare (ignore condition))
+                                            (incf error-count))))
+                         (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                                  subscription :timeout 5)
+                           (error "The valid 204 subscription did not finish."))
+                         t)))
+                  (declare (ignore ignored))
+                  (setf records server-records))
+                (expect (length events) :to-equalp 0)
+                (expect error-count :to-equalp 0)
+                (expect request-count :to-equalp 1)
+                (expect (length records) :to-equalp 1)
+                (expect (sse-kit/http-kit-client:http-sse-subscription-stopped-p
+                         subscription)
+                        :to-equalp t)
+                (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
+                         subscription)
+                        :to-equalp t)))
+          (it "retries a 204 response with an invalid content type"
+              (let ((subscription nil)
+                    (ready (cl-concurrent-kit:make-semaphore))
+                    (received (cl-concurrent-kit:make-semaphore))
+                    (events nil)
+                    (errors nil)
+                    (retry-count 0)
+                    (request-count 0)
+                    (records nil))
+                (multiple-value-bind (ignored server-records)
+                    (%call-with-https-server
+                     "invalid-204-content-type"
+                     (lambda (port)
+                       (let ((client
+                              (%make-test-http-client
+                               (lambda (request attempt)
+                                 (declare (ignore request attempt))
+                                 (incf request-count)))))
+                         (setf subscription
+                               (sse-kit/http-kit-client:subscribe-http-sse
+                                (format nil "https://127.0.0.1:~D/events" port)
+                                (lambda (event)
+                                  (push event events)
+                                  (unless (cl-concurrent-kit:wait-on-semaphore
+                                           ready :timeout 5)
+                                    (error "Subscription startup was not released."))
+                                  (sse-kit/http-kit-client:stop-http-sse-subscription
+                                   subscription)
+                                  (cl-concurrent-kit:signal-semaphore received))
+                                :http-client client
+                                :retry-policy (%test-retry-policy)
+                                :on-error (lambda (condition) (push condition errors))
+                                :on-retry (lambda (delay condition)
+                                            (declare (ignore delay condition))
+                                            (incf retry-count))))
+                         (cl-concurrent-kit:signal-semaphore ready)
+                         (unless (cl-concurrent-kit:wait-on-semaphore
+                                  received :timeout 10)
+                           (error "The valid response after 204 retry did not dispatch an event."))
+                         (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                                  subscription :timeout 5)
+                           (error "The 204 retry worker did not finish."))
+                         t)))
+                  (declare (ignore ignored))
+                  (setf records server-records))
+                (setf events (nreverse events))
+                (expect (length events) :to-equalp 1)
+                (expect (sse-kit:http-sse-event-data (first events)) :to-equalp "recovered")
+                (expect (length errors) :to-equalp 1)
+                (expect (sse-kit:sse-http-error-status (first errors)) :to-equalp 204)
+                (expect retry-count :to-equalp 1)
+                (expect request-count :to-equalp 2)
+                (expect (length records) :to-equalp 2)))
 
           (it "retries an invalid response with a fresh cancellation token"
               (let ((subscription nil)

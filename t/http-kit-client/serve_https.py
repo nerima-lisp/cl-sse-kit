@@ -40,6 +40,13 @@ responses = {
     "accepted-2xx": [
         (202, "text/event-stream", b"event: accepted\ndata: created\n\n", []),
     ],
+    "valid-204": [
+        (204, "text/event-stream", b"", []),
+    ],
+    "invalid-204-content-type": [
+        (204, "text/plain", b"", []),
+        (200, "text/event-stream", b"event: recovered\ndata: recovered\n\n", []),
+    ],
     "active-stop": [
         (200, "text/event-stream", b"data: active\n\n", []),
     ],
@@ -103,7 +110,7 @@ try:
             else:
                 status, content_type, body, extra_headers = responses[mode][index]
 
-            reason = "Found" if status == 302 else "OK"
+            reason = {302: "Found", 204: "No Content"}.get(status, "OK")
             response = [f"HTTP/1.1 {status} {reason}\r\n"]
             if content_type:
                 response.append(f"Content-Type: {content_type}\r\n")
@@ -123,11 +130,9 @@ try:
                 except (ssl.SSLError, socket.timeout):
                     pass
             else:
-                response.extend([
-                    f"Content-Length: {len(body)}\r\n",
-                    "Connection: close\r\n",
-                    "\r\n",
-                ])
+                if status != 204:
+                    response.append(f"Content-Length: {len(body)}\r\n")
+                response.extend(["Connection: close\r\n", "\r\n"])
                 stream.sendall("".join(response).encode("ascii") + body)
 finally:
     listener.close()
