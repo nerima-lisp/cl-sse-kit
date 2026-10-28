@@ -156,6 +156,11 @@
               pkgs.openssl
               pkgs.python3
               cl-weave.packages.${system}.default
+              pkgs.sbclPackages.alexandria
+              pkgs.sbclPackages.bordeaux-threads
+              pkgs.sbclPackages.global-vars
+              pkgs.sbclPackages.trivial-features
+              pkgs.sbclPackages.trivial-garbage
               pkgs.sbcl
               pkgs.coreutils
               pkgs.perl
@@ -163,7 +168,7 @@
             shellHook = ''
               export CL_SOURCE_REGISTRY="''${CL_SOURCE_REGISTRY:-$PWD//:${cl-codec-kit.outPath}//:${cl-http-message-kit.outPath}//:${
                 cl-hpack-codec-kit.packages.${system}.default
-              }/share/common-lisp/source//:${cl-resilience-kit.outPath}//:${cl-boundary-kit.outPath}//:${cl-concurrent-kit.outPath}//:${cl-date-kit.outPath}//:${cl-host-kit.outPath}//:${cl-weave.outPath}//:${clHttpKit}//:${clDeflate}//:${clTls}//:${clCrypto}//:${clQuic}//}"
+              }/share/common-lisp/source//:${cl-resilience-kit.outPath}//:${cl-boundary-kit.outPath}//:${cl-concurrent-kit.outPath}//:${cl-date-kit.outPath}//:${cl-host-kit.outPath}//:${cl-weave.outPath}//:${clHttpKit}//:${clDeflate}//:${clTls}//:${clCrypto}//:${clQuic}//:${pkgs.sbclPackages.alexandria}/:${pkgs.sbclPackages.global-vars}/:${pkgs.sbclPackages.trivial-features}/:${pkgs.sbclPackages.trivial-garbage}/:${pkgs.sbclPackages.bordeaux-threads}/}"
             '';
           };
         }
@@ -181,6 +186,11 @@
           clDate = cl-date-kit.packages.${system}.default;
           clHost = cl-host-kit.packages.${system}.default;
           clWeave = cl-weave.packages.${system}.default;
+          alexandria = pkgs.sbclPackages.alexandria;
+          bordeauxThreads = pkgs.sbclPackages.bordeaux-threads;
+          globalVars = pkgs.sbclPackages.global-vars;
+          trivialFeatures = pkgs.sbclPackages.trivial-features;
+          trivialGarbage = pkgs.sbclPackages.trivial-garbage;
           asdFiles = [
             "${clCodec}/cl-codec-kit.asd"
             "${clHpack}/share/common-lisp/source/cl-hpack-codec-kit/cl-hpack-codec-kit.asd"
@@ -213,10 +223,15 @@
               pkgs.openssl
               pkgs.python3
               clWeave
+              alexandria
+              bordeauxThreads
+              globalVars
+              trivialFeatures
+              trivialGarbage
             ];
             text = ''
               export SBCL_HOME="${pkgs.sbcl}/lib/sbcl"
-              export CL_SOURCE_REGISTRY='(:source-registry :ignore-inherited-configuration)'
+              export CL_SOURCE_REGISTRY="$PWD//:${alexandria}/:${bordeauxThreads}/:${globalVars}/:${trivialFeatures}/:${trivialGarbage}/"
               timeout --signal=TERM --kill-after=15s 300s \
                 cl-weave run cl-sse-kit/test \
                 --reporter spec \
@@ -251,9 +266,14 @@
               clDate
               clHost
               clWeave
+              alexandria
+              bordeauxThreads
+              globalVars
+              trivialFeatures
+              trivialGarbage
             ];
             text = ''
-              export CL_SOURCE_REGISTRY='(:source-registry :ignore-inherited-configuration)'
+              export CL_SOURCE_REGISTRY="$PWD//:${alexandria}/:${bordeauxThreads}/:${globalVars}/:${trivialFeatures}/:${trivialGarbage}/"
               coverage_dir="$(mktemp -d "''${TMPDIR:-/tmp}/cl-sse-kit-coverage.XXXXXX")"
               trap 'rm -rf "$coverage_dir"' EXIT
               timeout --signal=TERM --kill-after=15s 300s \
