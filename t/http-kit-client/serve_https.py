@@ -23,6 +23,26 @@ responses = {
         (500, "text/plain", b"server error", []),
         (500, "text/plain", b"server error", []),
     ],
+    "invalid-status": [
+        (500, "text/event-stream", b"event: rejected\ndata: status\n\n", []),
+        (500, "text/event-stream", b"event: rejected\ndata: status\n\n", []),
+        (500, "text/event-stream", b"event: rejected\ndata: status\n\n", []),
+    ],
+    "invalid-content-type": [
+        (200, "text/plain", b"event: rejected\ndata: content-type\n\n", []),
+        (200, "text/plain", b"event: rejected\ndata: content-type\n\n", []),
+        (200, "text/plain", b"event: rejected\ndata: content-type\n\n", []),
+    ],
+    "retry-fresh-token": [
+        (500, "text/event-stream", b"event: rejected\ndata: stale-token\n\n", []),
+        (200, "text/event-stream", b"event: ready\ndata: recovered\nid: retry-id\n\n", []),
+    ],
+    "accepted-2xx": [
+        (202, "text/event-stream", b"event: accepted\ndata: created\n\n", []),
+    ],
+    "active-stop": [
+        (200, "text/event-stream", b"data: active\n\n", []),
+    ],
     "callback-error": [
         (200, "text/event-stream", b"data: callback\nid: callback-id\n\n", []),
     ],
@@ -88,11 +108,18 @@ try:
             if content_type:
                 response.append(f"Content-Type: {content_type}\r\n")
             response.extend(f"{name}: {value}\r\n" for name, value in extra_headers)
+            content_length = 1000000 if mode == "active-stop" else len(body)
             response.extend([
-                f"Content-Length: {len(body)}\r\n",
+                f"Content-Length: {content_length}\r\n",
                 "Connection: close\r\n",
                 "\r\n",
             ])
             stream.sendall("".join(response).encode("ascii") + body)
+            if mode == "active-stop":
+                try:
+                    while stream.recv(4096):
+                        pass
+                except ssl.SSLError:
+                    pass
 finally:
     listener.close()
