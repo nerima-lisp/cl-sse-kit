@@ -672,9 +672,7 @@
                        (unless (cl-concurrent-kit:wait-on-semaphore
                                 received :timeout 5)
                          (error "The active SSE response was not dispatched."))
-                       (unless (sse-kit/http-kit-client:wait-http-sse-subscription
-                                subscription :timeout 2)
-                         (error "The active request was not cancelled promptly."))
+                       (expect (not (null (sse-kit/http-kit-client:wait-http-sse-subscription subscription :timeout 2))) :to-equalp t)
 
                        t))
                   (declare (ignore ignored))
