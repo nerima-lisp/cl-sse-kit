@@ -138,10 +138,14 @@ Transport cancellation latency depends on the active protocol."
 
 (defun %sync-parser-state (subscription parser)
   (let* ((protocol-client (%subscription-protocol-client subscription))
-         (retry-ms (sse-kit:http-sse-parser-retry parser)))
-    (when retry-ms
-      (cl-concurrent-kit:with-lock-held
-          ((%subscription-lock subscription))
+         (retry-ms (sse-kit:http-sse-parser-retry parser))
+         (last-event-id (sse-kit:http-sse-parser-last-event-id parser)))
+    (cl-concurrent-kit:with-lock-held
+        ((%subscription-lock subscription))
+      (setf (%subscription-last-event-id subscription) last-event-id
+            (sse-kit:http-sse-client-last-event-id protocol-client)
+            last-event-id)
+      (when retry-ms
         (let* ((policy (sse-kit:http-sse-client-retry-policy protocol-client))
                (maximum (or (resilience-kit:retry-policy-max-delay policy)
                             31536000d0))

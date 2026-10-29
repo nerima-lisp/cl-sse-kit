@@ -17,6 +17,14 @@ responses = {
     "oversized-line": [
         (200, "text/event-stream", b"x" * 65537, []),
     ],
+    "id-only-event-id": [
+        (200, "text/event-stream", b"id: 42\n\n", []),
+        (200, "text/event-stream", b"data: finished\n\n", []),
+    ],
+    "empty-event-id": [
+        (200, "text/event-stream", b"id:\n\n", []),
+        (200, "text/event-stream", b"data: finished\n\n", []),
+    ],
     "partial-id": [
         (200, "text/event-stream", b"id: uncommitted\n", []),
         (200, "text/event-stream", b"data: recovered\nid: committed\n\n", []),

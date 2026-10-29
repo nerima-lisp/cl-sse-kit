@@ -57,6 +57,7 @@
           (redirect-policy (http-kit/client:make-http-redirect-policy))
           strict-transport-store auth-provider challenge-auth-provider
           (cookie-jar (http-kit/client:make-http-cookie-jar))
+          (initial-last-event-id "")
           expect-callback-p retry-forever-p stop-on-retry-p)
   (let ((subscription nil)
         (callback-signal (cl-concurrent-kit:make-semaphore))
@@ -100,6 +101,7 @@
                     :http-client client
                     :retry-policy (%test-retry-policy)
                     :retry-forever-p retry-forever-p
+                    :initial-last-event-id initial-last-event-id
                     :on-error
                     (lambda (condition)
                       (push condition errors)
@@ -586,6 +588,44 @@
       (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
                subscription)
               :to-equalp t)))
+  (it "reconnects with Last-Event-ID from an id-only block"
+    (multiple-value-bind
+        (events errors request-count retry-count records subscription)
+        (%run-http-fixture "id-only-event-id" :expect-callback-p t)
+      (declare (ignore retry-count))
+      (expect (length events) :to-equalp 1)
+      (expect (sse-kit:http-sse-event-data (first events))
+              :to-equalp "finished")
+      (expect (length errors) :to-equalp 1)
+      (expect request-count :to-equalp 2)
+      (expect (length records) :to-equalp 2)
+      (expect (not (search "\"last-event-id\"" (first records)))
+              :to-equalp t)
+      (expect (search "\"last-event-id\":\"42\"" (second records))
+              :to-be-truthy)
+      (expect (sse-kit/http-kit-client:http-sse-subscription-last-event-id
+               subscription)
+              :to-equalp "42")))
+  (it "clears Last-Event-ID from an empty id field before reconnecting"
+    (multiple-value-bind
+        (events errors request-count retry-count records subscription)
+        (%run-http-fixture "empty-event-id"
+                           :initial-last-event-id "seed"
+                           :expect-callback-p t)
+      (declare (ignore retry-count))
+      (expect (length events) :to-equalp 1)
+      (expect (sse-kit:http-sse-event-data (first events))
+              :to-equalp "finished")
+      (expect (length errors) :to-equalp 1)
+      (expect request-count :to-equalp 2)
+      (expect (length records) :to-equalp 2)
+      (expect (search "\"last-event-id\":\"seed\"" (first records))
+              :to-be-truthy)
+      (expect (not (search "\"last-event-id\"" (second records)))
+              :to-equalp t)
+      (expect (sse-kit/http-kit-client:http-sse-subscription-last-event-id
+               subscription)
+              :to-equalp "")))
   (it "does not retain events in callback subscription parsers"
     (let* ((protocol-client
              (sse-kit:make-http-sse-client
