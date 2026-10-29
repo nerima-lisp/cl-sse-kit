@@ -19,7 +19,7 @@
                &key default-headers
                (redirect-policy (http-kit/client:make-http-redirect-policy))
                strict-transport-store auth-provider challenge-auth-provider
-               (cookie-jar (http-kit/client:make-http-cookie-jar)))
+               (cookie-jar (http-kit/client:make-http-cookie-jar)) proxy)
   (http-kit/client:make-http-client
    :open-stream (http-kit/network:make-http-network-stream-opener)
    :close-stream #'http-kit/network:close-http-tcp-stream
@@ -36,6 +36,7 @@
    :redirect-policy redirect-policy
    :auth-provider auth-provider
    :challenge-auth-provider challenge-auth-provider
+   :proxy proxy
    :on-request on-request))
 
 (defun %test-retry-policy ()
@@ -58,7 +59,7 @@
           strict-transport-store auth-provider challenge-auth-provider
           (cookie-jar (http-kit/client:make-http-cookie-jar))
           (initial-last-event-id "")
-          expect-callback-p retry-forever-p stop-on-retry-p)
+          expect-callback-p retry-forever-p stop-on-retry-p proxy-p)
   (let ((subscription nil)
         (callback-signal (cl-concurrent-kit:make-semaphore))
         (callback-release (cl-concurrent-kit:make-semaphore))
@@ -82,6 +83,12 @@
                             (http-kit:http-request-uri request))
                            request-schemes))
                    :default-headers default-headers
+                   :proxy
+                   (when proxy-p
+                     (http-kit/client:make-http-proxy
+                      :scheme :http
+                      :host "127.0.0.1"
+                      :port port))
                    :redirect-policy redirect-policy
                    :strict-transport-store strict-transport-store
                    :auth-provider auth-provider
@@ -758,7 +765,7 @@
                   :to-equalp t))))
   (it "strips client credentials across origins even when authorization preservation is enabled"
       (let* ((default-headers
-              (list (http-kit:make-http-header "authorization" "test-auth-value")
+              (list (http-kit:make-http-header "AuThOrIzAtIoN" "test-auth-value")
                     (http-kit:make-http-header "cookie" "user=explicit")
                     (http-kit:make-http-header "proxy-authorization" "proxy-test-value")
                     (http-kit:make-http-header "x-api-key" "api-key-value")
@@ -799,6 +806,39 @@
           (expect (sse-kit/http-kit-client:http-sse-subscription-stopped-p
                    subscription)
                   :to-equalp t))))
+  (it "sends Proxy-Authorization only to the first origin across a proxy redirect"
+    (let ((default-headers
+           (list (http-kit:make-http-header
+                  "Proxy-Authorization" "proxy-test-value"))))
+      (multiple-value-bind
+          (events errors request-count retry-count records subscription)
+          (%run-http-fixture
+           "proxy-auth-redirect"
+           :initial-host "origin-one.invalid"
+           :initial-scheme "http"
+           :default-headers default-headers
+           :proxy-p t
+           :expect-callback-p t)
+        (declare (ignore retry-count))
+        (expect (length events) :to-equalp 1)
+        (expect (sse-kit:http-sse-event-data (first events))
+                :to-equalp "proxy redirected")
+        (expect (length errors) :to-equalp 0)
+        (expect request-count :to-equalp 2)
+        (expect (length records) :to-equalp 2)
+        (expect (search "\"path\":\"http://origin-one.invalid:" (first records))
+                :to-be-truthy)
+        (expect (search "\"proxy-authorization\":\"proxy-test-value\""
+                        (first records))
+                :to-be-truthy)
+        (expect (search "\"path\":\"http://origin-two.invalid/events\""
+                        (second records))
+                :to-be-truthy)
+        (expect (search "\"proxy-authorization\":" (second records))
+                :to-equalp nil)
+        (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
+                 subscription)
+                :to-equalp t))))
   (it "fails closed on a cross-origin redirect when an auth provider is configured"
       (let ((provider-calls 0))
         (multiple-value-bind

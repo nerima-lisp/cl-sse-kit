@@ -92,12 +92,18 @@ listener = socket.socket()
 listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 listener.bind(("127.0.0.1", 0))
 listener.listen()
-if mode in {"redirect-cross-origin-challenge", "redirect-300"}:
+if mode in {
+    "proxy-auth-redirect",
+    "redirect-cross-origin-challenge",
+    "redirect-300",
+}:
     listener.settimeout(0.5)
 print(listener.getsockname()[1], flush=True)
 
 try:
-    if mode in redirect_modes:
+    if mode == "proxy-auth-redirect":
+        request_count = 2
+    elif mode in redirect_modes:
         if mode == "redirect-limit":
             request_count = 11
         elif mode == "redirect-configured-limit":
@@ -121,7 +127,8 @@ try:
         except socket.timeout:
             break
         use_plain_stream = (
-            mode == "redirect-downgrade-allowed" and index == 1
+            mode == "proxy-auth-redirect"
+            or (mode == "redirect-downgrade-allowed" and index == 1)
         )
         stream = (
             connection
@@ -154,7 +161,19 @@ try:
             if mode == "retry-limit" and index < 2:
                 continue
 
-            if mode in {"redirect-limit", "redirect-configured-limit"}:
+            if mode == "proxy-auth-redirect" and index == 0:
+                status = 302
+                content_type = None
+                body = b""
+                extra_headers = [
+                    ("Location", "http://origin-two.invalid/events")
+                ]
+            elif mode == "proxy-auth-redirect":
+                status = 200
+                content_type = "text/event-stream"
+                body = b"data: proxy redirected\n\n"
+                extra_headers = []
+            elif mode in {"redirect-limit", "redirect-configured-limit"}:
                 status = 302
                 content_type = None
                 body = b""
