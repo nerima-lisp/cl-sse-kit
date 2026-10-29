@@ -17,6 +17,9 @@ responses = {
     "oversized-line": [
         (200, "text/event-stream", b"x" * 65537, []),
     ],
+    "oversized-final-cr": [
+        (200, "text/event-stream", (b"data: x\n\n" * 10000) + b"data: over\n\r", []),
+    ],
     "id-only-event-id": [
         (200, "text/event-stream", b"id: 42\n\n", []),
         (200, "text/event-stream", b"data: finished\n\n", []),

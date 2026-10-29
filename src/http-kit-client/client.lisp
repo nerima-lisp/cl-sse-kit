@@ -495,7 +495,12 @@ Transport cancellation latency depends on the active protocol."
                (setf (sse-kit:http-sse-client-retry-attempt protocol-client) 0)
                (values (%make-disconnected-condition) nil))
            (error (condition)
-             (values condition nil))))))))
+             (%set-subscription-error subscription condition)
+             (unwind-protect
+                  (when (%subscription-on-error subscription)
+                    (funcall (%subscription-on-error subscription) condition))
+               (stop-http-sse-subscription subscription :parser-error))
+             (values condition t))))))))
 (defun %make-subscription-parser (protocol-client on-event)
   (sse-kit:make-http-sse-parser
    :initial-last-event-id

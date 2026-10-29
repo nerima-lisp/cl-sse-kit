@@ -595,6 +595,59 @@
       (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
                subscription)
               :to-equalp t)))
+  (it "does not retry an event-count error raised while finishing a CR-terminated block"
+      (let ((subscription nil)
+            (event-count 0)
+            (errors nil)
+            (error-count 0)
+            (retry-count 0)
+            (request-count 0))
+        (multiple-value-bind (ignored records)
+            (%call-with-https-server
+             "oversized-final-cr"
+             (lambda (port)
+               (let ((client
+                      (%make-test-http-client
+                       (lambda (request attempt)
+                         (declare (ignore request attempt))
+                         (incf request-count)))))
+                 (setf subscription
+                       (sse-kit/http-kit-client:subscribe-http-sse
+                        (format nil "https://127.0.0.1:~D/events" port)
+                        (lambda (event)
+                          (declare (ignore event))
+                          (incf event-count))
+                        :http-client client
+                        :retry-policy (%test-retry-policy)
+                        :retry-forever-p t
+                        :on-error (lambda (condition)
+                                    (push condition errors)
+                                    (incf error-count))
+                        :on-retry (lambda (delay condition)
+                                    (declare (ignore delay condition))
+                                    (incf retry-count)
+                                    (sse-kit/http-kit-client:stop-http-sse-subscription
+                                     subscription :unexpected-retry))))
+                 (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                          subscription :timeout 30)
+                   (sse-kit/http-kit-client:stop-http-sse-subscription
+                    subscription :test-timeout)
+                   (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                            subscription :timeout 5)
+                     (error "The EOF parser error subscription did not stop."))
+                   (error "The EOF parser error subscription did not finish."))
+                 t)))
+          (declare (ignore ignored))
+          (expect event-count :to-equalp 10000)
+          (expect error-count :to-equalp 1)
+          (expect retry-count :to-equalp 0)
+          (expect request-count :to-equalp 1)
+          (expect (length errors) :to-equalp 1)
+          (expect (typep (first errors) (quote sse-kit:sse-size-limit-exceeded))
+                  :to-equalp t)
+          (expect (sse-kit:sse-size-limit-exceeded-kind (first errors))
+                  :to-equalp :events)
+          (expect (length records) :to-equalp 1))))
   (it "reconnects with Last-Event-ID from an id-only block"
     (multiple-value-bind
         (events errors request-count retry-count records subscription)
