@@ -217,6 +217,17 @@
   (it "does not dispatch an incomplete event at strict EOF"
     (let ((events (parse-http-sse-events "data: incomplete")))
       (expect events :to-equalp nil)))
+  (it "reports Last-Event-ID only after a block is complete"
+    (let ((parser (make-http-sse-parser)))
+      (feed-http-sse-parser parser (format nil "id: 42~%"))
+      (expect (http-sse-parser-last-event-id parser) :to-equalp "")
+      (feed-http-sse-parser parser (format nil "~%"))
+      (expect (http-sse-parser-last-event-id parser) :to-equalp "42")
+      (feed-http-sse-parser parser (format nil "id:~%~%"))
+      (expect (http-sse-parser-last-event-id parser) :to-equalp "")
+      (feed-http-sse-parser parser (format nil "id: pending~%"))
+      (finish-http-sse-parser parser)
+      (expect (http-sse-parser-last-event-id parser) :to-equalp "")))
 
   (it "preserves UTF-8 across octet chunk boundaries"
     (let* ((emoji (string (code-char #x1f600)))

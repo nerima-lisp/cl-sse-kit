@@ -315,7 +315,8 @@ Transport cancellation latency depends on the active protocol."
                                      (handler-case
                                          (progn
                                            (sse-kit:feed-http-sse-parser parser chunk)
-                                           (%sync-parser-state subscription parser))
+                                           (unless (%subscription-stopped-p* subscription)
+                                             (%sync-parser-state subscription parser)))
                                        (error (condition)
                                          (setf response-kind :parser-error
                                                response-condition condition)
