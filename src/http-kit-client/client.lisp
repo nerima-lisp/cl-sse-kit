@@ -305,10 +305,15 @@ Transport cancellation latency depends on the active protocol."
                                  :on-body-chunk
                                  (lambda (chunk)
                                    (when (and (eq response-kind :sse)
-                                              (not (%subscription-stopped-p*
-                                                    subscription)))
-                                     (sse-kit:feed-http-sse-parser parser chunk)
-                                     (%sync-parser-state subscription parser))))))
+                                              (not (%subscription-stopped-p* subscription)))
+                                     (handler-case
+                                         (progn
+                                           (sse-kit:feed-http-sse-parser parser chunk)
+                                           (%sync-parser-state subscription parser))
+                                       (error (condition)
+                                         (setf response-kind :parser-error
+                                               response-condition condition)
+                                         (error condition))))))))
                           (when timeout-p
                             (setf options
                                   (append options
@@ -352,13 +357,14 @@ Transport cancellation latency depends on the active protocol."
                                        (setf cookie-same-site-p nil))
                                      (setf request next-request))
                                    (incf redirect-count))
-                                  ((eq response-kind :invalid)
-                                   (error response-condition))
+                                  ((member response-kind (quote (:invalid :parser-error))) (error response-condition))
                                   (t
                                    (return-from request-loop response))))
                             (http-kit/client:http-client-request-cancelled
                              (condition)
                              (cond
+                               ((eq response-kind :parser-error)
+                                (error response-condition))
                                ((eq response-kind :invalid)
                                 (error response-condition))
                                ((%subscription-stopped-p* subscription)
@@ -366,9 +372,13 @@ Transport cancellation latency depends on the active protocol."
                                (t
                                 (error condition))))
                             (error (condition)
-                              (if (eq response-kind :invalid)
-                                  (error response-condition)
-                                  (error condition)))))
+                              (cond
+                                ((eq response-kind :parser-error)
+                                 (error response-condition))
+                                ((eq response-kind :invalid)
+                                 (error response-condition))
+                                (t
+                                 (error condition))))))
                    (cl-concurrent-kit:with-lock-held
                        ((%subscription-lock subscription))
                      (when (eq (%subscription-active-request-token subscription)
@@ -424,10 +434,12 @@ Transport cancellation latency depends on the active protocol."
         (setf response (%request-sse-response subscription parser))
       (error (condition)
         (unless callback-condition
-          (if (or (and (typep condition (quote sse-kit:sse-http-error))
-                       (eq (sse-kit:sse-error-operation condition) :http-response))
-                   (and (typep condition (quote http-kit/client:http-client-error))
-                        (eq (http-kit:http-error-operation condition) :redirect)))
+          (if (or
+              (and (typep condition (quote sse-kit:sse-http-error))
+                   (eq (sse-kit:sse-error-operation condition) :http-response))
+              (and (typep condition (quote http-kit/client:http-client-error))
+                   (eq (http-kit:http-error-operation condition) :redirect))
+              (typep condition (quote sse-kit:sse-error)))
               (progn
                 (%set-subscription-error subscription condition)
                 (unwind-protect
@@ -436,10 +448,13 @@ Transport cancellation latency depends on the active protocol."
                                 condition))
                   (stop-http-sse-subscription
                     subscription
-                    (if (and (typep condition (quote http-kit/client:http-client-error))
-                             (eq (http-kit:http-error-operation condition) :redirect))
-                        :redirect-policy-error
-                        :invalid-response)))
+                    (cond
+                      ((and (typep condition (quote http-kit/client:http-client-error))
+                            (eq (http-kit:http-error-operation condition) :redirect))
+                       :redirect-policy-error)
+                      ((typep condition (quote sse-kit:sse-http-error))
+                       :invalid-response)
+                      (t :parser-error))))
                 (return-from %perform-subscription-attempt
                   (values condition t)))
               (return-from %perform-subscription-attempt

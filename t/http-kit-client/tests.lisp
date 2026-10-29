@@ -51,10 +51,13 @@
      (declare (ignore condition attempt))
      t)))
 (defun %run-http-fixture
-    (mode &key (initial-host "127.0.0.1") (initial-scheme "https")
-          default-headers (redirect-policy (http-kit/client:make-http-redirect-policy)) strict-transport-store auth-provider challenge-auth-provider
+    (mode &key
+          (initial-host "127.0.0.1") (initial-scheme "https")
+          default-headers
+          (redirect-policy (http-kit/client:make-http-redirect-policy))
+          strict-transport-store auth-provider challenge-auth-provider
           (cookie-jar (http-kit/client:make-http-cookie-jar))
-          expect-callback-p)
+          expect-callback-p retry-forever-p stop-on-retry-p)
   (let ((subscription nil)
         (callback-signal (cl-concurrent-kit:make-semaphore))
         (callback-release (cl-concurrent-kit:make-semaphore))
@@ -96,6 +99,7 @@
                         (error "The test did not release the event callback.")))
                     :http-client client
                     :retry-policy (%test-retry-policy)
+                    :retry-forever-p retry-forever-p
                     :on-error
                     (lambda (condition)
                       (push condition errors)
@@ -104,7 +108,12 @@
                     :on-retry
                     (lambda (delay condition)
                       (declare (ignore delay condition))
-                      (incf retry-count))))
+                      (incf retry-count)
+                      (when stop-on-retry-p
+                        (setf callback-kind :retry)
+                        (cl-concurrent-kit:signal-semaphore callback-signal)
+                        (sse-kit/http-kit-client:stop-http-sse-subscription
+                         subscription :test-retry-observed)))))
              (when (and expect-callback-p
                         (not (cl-concurrent-kit:wait-on-semaphore
                               callback-signal :timeout 5)))
@@ -554,6 +563,26 @@
       (expect (sse-kit/http-kit-client:http-sse-subscription-last-event-id
                subscription)
               :to-equalp "")
+      (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
+               subscription)
+              :to-equalp t)))
+  (it "does not retry a parser line size-limit error"
+    (multiple-value-bind
+        (events errors request-count retry-count records subscription)
+        (%run-http-fixture
+         "oversized-line"
+         :retry-forever-p t
+         :stop-on-retry-p t
+         :expect-callback-p t)
+      (expect retry-count :to-equalp 0)
+      (expect request-count :to-equalp 1)
+      (expect (length events) :to-equalp 0)
+      (expect (length errors) :to-equalp 1)
+      (expect (typep (first errors) (quote sse-kit:sse-size-limit-exceeded))
+              :to-equalp t)
+      (expect (sse-kit:sse-size-limit-exceeded-kind (first errors))
+              :to-equalp :line)
+      (expect (length records) :to-equalp 1)
       (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
                subscription)
               :to-equalp t)))

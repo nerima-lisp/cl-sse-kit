@@ -14,6 +14,9 @@ responses = {
     "stop": [
         (200, "text/event-stream", b"data: once\nid: stop-id\nretry: 1000\n\n", []),
     ],
+    "oversized-line": [
+        (200, "text/event-stream", b"x" * 65537, []),
+    ],
     "partial-id": [
         (200, "text/event-stream", b"id: uncommitted\n", []),
         (200, "text/event-stream", b"data: recovered\nid: committed\n\n", []),
