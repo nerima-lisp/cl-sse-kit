@@ -65,6 +65,7 @@ responses = {
 }
 
 redirect_statuses = {
+    "redirect-300": 300,
     "redirect-301": 301,
     "redirect-302": 302,
     "redirect-303": 303,
@@ -91,7 +92,7 @@ listener = socket.socket()
 listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 listener.bind(("127.0.0.1", 0))
 listener.listen()
-if mode == "redirect-cross-origin-challenge":
+if mode in {"redirect-cross-origin-challenge", "redirect-300"}:
     listener.settimeout(0.5)
 print(listener.getsockname()[1], flush=True)
 
@@ -209,6 +210,7 @@ try:
                 status, content_type, body, extra_headers = responses[mode][index]
 
             reason = {
+                300: "Multiple Choices",
                 401: "Unauthorized",
                 204: "No Content",
                 301: "Moved Permanently",

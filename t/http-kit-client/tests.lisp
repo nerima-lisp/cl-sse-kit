@@ -642,6 +642,27 @@
       (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
                subscription)
               :to-equalp t)))
+  (it "does not follow a 300 response when policy includes it"
+    (let ((redirect-policy
+            (http-kit/client:make-http-redirect-policy
+             :statuses (quote (300 301 302 303 307 308)))))
+      (multiple-value-bind
+          (events errors request-count retry-count records subscription)
+          (%run-http-fixture "redirect-300"
+                             :redirect-policy redirect-policy
+                             :expect-callback-p t)
+        (declare (ignore retry-count))
+        (expect (length events) :to-equalp 0)
+        (expect (length errors) :to-equalp 1)
+        (expect (sse-kit:sse-error-operation (first errors))
+                :to-equalp :http-response)
+        (expect (sse-kit:sse-http-error-status (first errors))
+                :to-equalp 300)
+        (expect request-count :to-equalp 1)
+        (expect (length records) :to-equalp 1)
+        (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
+                 subscription)
+                :to-equalp t))))
   (it "does not retain events in callback subscription parsers"
     (let* ((protocol-client
              (sse-kit:make-http-sse-client

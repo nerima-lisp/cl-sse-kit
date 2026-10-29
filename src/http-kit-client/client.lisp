@@ -279,11 +279,13 @@ Transport cancellation latency depends on the active protocol."
                                              headers "location"))
                                           (redirect-p
                                             (and location
-                                                 (member
-                                                  status
-                                                  (http-kit/client:http-redirect-policy-statuses
-                                                   policy)
-                                                  :test #'=))))
+                                                 (member status
+                                                         (quote (301 302 303 307 308))
+                                                         :test #'=)
+                                                 (member status
+                                                         (http-kit/client:http-redirect-policy-statuses
+                                                          policy)
+                                                         :test #'=))))
                                      (if redirect-p
                                          (setf response-kind :redirect
                                                redirect-location location)
