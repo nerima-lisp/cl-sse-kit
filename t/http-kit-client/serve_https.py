@@ -61,6 +61,7 @@ redirect_modes = set(redirect_statuses) | {
     "redirect",
     "redirect-cross-origin",
     "redirect-cross-origin-terminal",
+    "redirect-cross-origin-challenge",
     "redirect-downgrade",
     "redirect-downgrade-allowed",
     "redirect-hsts",
@@ -76,6 +77,8 @@ listener = socket.socket()
 listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 listener.bind(("127.0.0.1", 0))
 listener.listen()
+if mode == "redirect-cross-origin-challenge":
+    listener.settimeout(0.5)
 print(listener.getsockname()[1], flush=True)
 
 try:
@@ -84,6 +87,8 @@ try:
             request_count = 11
         elif mode == "redirect-configured-limit":
             request_count = 2
+        elif mode == "redirect-cross-origin-challenge":
+            request_count = 3
         elif mode in {
             "redirect-cross-origin-terminal",
             "redirect-downgrade",
@@ -96,7 +101,10 @@ try:
         request_count = len(responses[mode])
 
     for index in range(request_count):
-        connection, _ = listener.accept()
+        try:
+            connection, _ = listener.accept()
+        except socket.timeout:
+            break
         use_plain_stream = (
             mode == "redirect-downgrade-allowed" and index == 1
         )
@@ -141,6 +149,11 @@ try:
                 content_type = "text/event-stream"
                 body = b"event: rejected\ndata: status\n\n"
                 extra_headers = [("Location", "/events")]
+            elif mode == "redirect-cross-origin-challenge" and index == 1:
+                status = 401
+                content_type = None
+                body = b""
+                extra_headers = [("WWW-Authenticate", 'Basic realm="test"')]
             elif mode in redirect_modes and index == 0:
                 status = redirect_statuses.get(mode, 302)
                 content_type = None
@@ -148,6 +161,7 @@ try:
                 if mode in {
                     "redirect-cross-origin",
                     "redirect-cross-origin-terminal",
+                    "redirect-cross-origin-challenge",
                 }:
                     location = f"https://localhost:{listener.getsockname()[1]}/events"
                 elif mode in {"redirect-downgrade", "redirect-downgrade-allowed"}:
@@ -181,6 +195,7 @@ try:
                 status, content_type, body, extra_headers = responses[mode][index]
 
             reason = {
+                401: "Unauthorized",
                 204: "No Content",
                 301: "Moved Permanently",
                 302: "Found",

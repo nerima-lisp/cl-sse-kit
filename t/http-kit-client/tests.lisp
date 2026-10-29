@@ -718,34 +718,41 @@
           (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
                    subscription)
                   :to-equalp t))))
-  (it "follows a cross-origin redirect when only a challenge auth provider is configured"
+  (it "rejects cross-origin redirects with a challenge auth provider before a target 401"
     (let ((provider-calls 0))
       (multiple-value-bind
           (events errors request-count retry-count records subscription)
           (%run-http-fixture
-           "redirect-cross-origin"
+           "redirect-cross-origin-challenge"
            :challenge-auth-provider
            (lambda (request response challenges)
              (declare (ignore request response challenges))
              (incf provider-calls)
-             "provider-test-value")
+             "provider-test-credential")
            :expect-callback-p t)
-        (expect (length events) :to-equalp 1)
-        (expect (sse-kit:http-sse-event-data (first events))
-                :to-equalp "followed")
-        (expect (length errors) :to-equalp 0)
+        (expect (length events) :to-equalp 0)
+        (expect (length errors) :to-equalp 1)
         (expect provider-calls :to-equalp 0)
-        (expect request-count :to-equalp 2)
+        (expect request-count :to-equalp 1)
         (expect retry-count :to-equalp 0)
-        (expect (length records) :to-equalp 2)
-        (expect (search "\"authorization\":" (second records))
-                :to-equalp nil)
-        (expect (sse-kit/http-kit-client:http-sse-subscription-stopped-p
-                 subscription)
+        (expect (length records) :to-equalp 1)
+        (expect (search "\"path\":\"/events\"" (first records))
+                :to-be-truthy)
+        (dolist (record records)
+          (expect (search "\"authorization\":" record)
+                  :to-equalp nil))
+        (expect (typep (first errors)
+                       'http-kit/client:http-client-error)
                 :to-equalp t)
+        (when (typep (first errors) 'http-kit/client:http-client-error)
+          (expect (http-kit:http-error-operation (first errors))
+                  :to-equalp :redirect))
         (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
                  subscription)
                 :to-equalp t))))
+
+
+
   (it "applies the default and configured redirect limits and rejects HTTPS downgrade"
       (let ((default-policy
              (http-kit/client:make-http-redirect-policy))

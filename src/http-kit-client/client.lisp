@@ -204,9 +204,10 @@ Transport cancellation latency depends on the active protocol."
              :operation :redirect
              :detail target))
     (unless (http-kit/client:http-same-origin-p initial-uri target)
-      (when (http-kit/client:http-client-auth-provider client)
+      (when (or (http-kit/client:http-client-auth-provider client)
+                (http-kit/client:http-client-challenge-auth-provider client))
         (error 'http-kit/client:http-client-error
-               :message "The adapter cannot safely follow a cross-origin redirect when an origin auth provider is configured."
+               :message "The adapter cannot safely follow a cross-origin redirect when an HTTP auth provider is configured."
                :operation :redirect
                :detail (list :target target :reason :cross-origin-auth-provider)))
       (setf remove-names
