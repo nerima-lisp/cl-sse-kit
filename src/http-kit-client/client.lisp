@@ -392,7 +392,7 @@ Transport cancellation latency depends on the active protocol."
 )
 
 (defun %response-condition (status headers &optional cancellation-condition)
-  (let ((content-type (http-kit:http-header-value headers "content-type")))
+  (let ((content-types (http-kit:http-header-values headers "content-type")))
     (cond
       ((not (member status (list 200 204) :test (function =)))
        (make-condition 'sse-kit:sse-http-error
@@ -402,7 +402,9 @@ Transport cancellation latency depends on the active protocol."
                                  (list :cancellation-error cancellation-condition))
                        :status status
                        :headers headers))
-      ((not (sse-kit:http-sse-content-type-valid-p content-type))
+      ((or (/= (length content-types) 1)
+           (not (sse-kit:http-sse-content-type-valid-p
+                 (first content-types))))
        (make-condition 'sse-kit:sse-http-error
                        :message "An SSE response must have a valid text/event-stream content type."
                        :operation :http-response

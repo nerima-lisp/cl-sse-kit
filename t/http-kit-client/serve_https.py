@@ -25,6 +25,9 @@ responses = {
         (200, "text/event-stream", b"id:\n\n", []),
         (200, "text/event-stream", b"data: finished\n\n", []),
     ],
+    "duplicate-content-type": [
+        (200, "text/event-stream", b"data: rejected\n\n", [("Content-Type", "text/event-stream")]),
+    ],
     "partial-id": [
         (200, "text/event-stream", b"id: uncommitted\n", []),
         (200, "text/event-stream", b"data: recovered\nid: committed\n\n", []),

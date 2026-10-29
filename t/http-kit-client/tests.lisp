@@ -626,6 +626,22 @@
       (expect (sse-kit/http-kit-client:http-sse-subscription-last-event-id
                subscription)
               :to-equalp "")))
+  (it "rejects responses with duplicate Content-Type headers"
+    (multiple-value-bind
+        (events errors request-count retry-count records subscription)
+        (%run-http-fixture "duplicate-content-type" :expect-callback-p t)
+      (declare (ignore retry-count))
+      (expect (length events) :to-equalp 0)
+      (expect (length errors) :to-equalp 1)
+      (expect (sse-kit:sse-error-operation (first errors))
+              :to-equalp :http-response)
+      (expect (sse-kit:sse-http-error-status (first errors))
+              :to-equalp 200)
+      (expect request-count :to-equalp 1)
+      (expect (length records) :to-equalp 1)
+      (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
+               subscription)
+              :to-equalp t)))
   (it "does not retain events in callback subscription parsers"
     (let* ((protocol-client
              (sse-kit:make-http-sse-client
