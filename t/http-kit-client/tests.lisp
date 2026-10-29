@@ -307,6 +307,76 @@
       (expect (sse-kit/http-kit-client:http-sse-subscription-last-event-id
                subscription)
               :to-equalp "second-id")))
+  (it "reconnects after a malformed response header with retry policy delay"
+      (let ((subscription nil)
+            (event-release (cl-concurrent-kit:make-semaphore))
+            (event-data nil)
+            (errors nil)
+            (retry-delays nil)
+            (request-count 0)
+            (records nil))
+        (multiple-value-bind (ignored server-records)
+            (%call-with-https-server
+             "malformed-response-header"
+             (lambda (port)
+               (let ((client
+                      (%make-test-http-client
+                       (lambda (request attempt)
+                         (declare (ignore request attempt))
+                         (incf request-count)))))
+                 (setf subscription
+                       (sse-kit/http-kit-client:subscribe-http-sse
+                        (format nil "https://127.0.0.1:~D/events" port)
+                        (lambda (event)
+                          (unless (cl-concurrent-kit:wait-on-semaphore
+                                   event-release :timeout 5)
+                            (error "The recovered event callback was not released."))
+                          (setf event-data (sse-kit:http-sse-event-data event))
+                          (sse-kit/http-kit-client:stop-http-sse-subscription
+                           subscription :event-received))
+                        :http-client client
+                        :retry-policy
+                        (resilience-kit:make-retry-policy
+                         :max-attempts 2
+                         :initial-delay 0.3d0
+                         :multiplier 1d0
+                         :max-delay 1d0
+                         :jitter :none
+                         :retry-safe-p t
+                         :condition-classifier
+                         (lambda (condition attempt)
+                           (declare (ignore condition attempt))
+                           t))
+                        :on-error (lambda (condition)
+                                    (push condition errors))
+                        :on-retry (lambda (delay condition)
+                                    (declare (ignore condition))
+                                    (push delay retry-delays))))
+                 (cl-concurrent-kit:signal-semaphore event-release)
+                 (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                          subscription :timeout 5)
+                   (sse-kit/http-kit-client:stop-http-sse-subscription
+                    subscription :test-timeout)
+                   (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                            subscription :timeout 5)
+                     (error "The malformed-header subscription did not stop."))
+                   (error "The malformed-header subscription did not finish."))
+                 t)))
+          (declare (ignore ignored))
+          (setf records server-records))
+        (expect event-data :to-equalp "recovered")
+        (expect (length errors) :to-equalp 1)
+        (expect (length retry-delays) :to-equalp 1)
+        (expect (>= (first retry-delays) 0.29d0) :to-equalp t)
+        (expect request-count :to-equalp 2)
+        (expect (length records) :to-equalp 2)
+        (expect (>= (- (%server-record-time (second records))
+                       (%server-record-time (first records)))
+                    0.25d0)
+                :to-equalp t)
+        (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
+                 subscription)
+                :to-equalp t)))
 
   (it "stops a pending retry without sending another request"
     (let ((subscription nil)

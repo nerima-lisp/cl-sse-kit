@@ -95,7 +95,9 @@ listener = socket.socket()
 listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 listener.bind(("127.0.0.1", 0))
 listener.listen()
-if mode in {
+if mode == "malformed-response-header":
+    listener.settimeout(5)
+elif mode in {
     "proxy-auth-redirect",
     "redirect-cross-origin-challenge",
     "redirect-300",
@@ -104,7 +106,9 @@ if mode in {
 print(listener.getsockname()[1], flush=True)
 
 try:
-    if mode == "proxy-auth-redirect":
+    if mode == "malformed-response-header":
+        request_count = 2
+    elif mode == "proxy-auth-redirect":
         request_count = 2
     elif mode in redirect_modes:
         if mode == "redirect-limit":
@@ -164,7 +168,15 @@ try:
             if mode == "retry-limit" and index < 2:
                 continue
 
-            if mode == "proxy-auth-redirect" and index == 0:
+            if mode == "malformed-response-header" and index == 0:
+                stream.sendall(b"HTTP/1.1 200 OK\r\nMissing-Colon\r\n\r\n")
+                continue
+            elif mode == "malformed-response-header":
+                status = 200
+                content_type = "text/event-stream"
+                body = b"data: recovered\n\n"
+                extra_headers = []
+            elif mode == "proxy-auth-redirect" and index == 0:
                 status = 302
                 content_type = None
                 body = b""
