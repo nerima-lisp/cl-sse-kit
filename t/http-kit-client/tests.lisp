@@ -575,6 +575,69 @@
       (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
                subscription)
               :to-equalp t)))
+  (it "does not report a parser callback error after stop wins"
+      (let ((subscription nil)
+            (callback-release (cl-concurrent-kit:make-semaphore))
+            (event-count 0)
+            (error-count 0)
+            (retry-count 0)
+            (request-count 0)
+            (records nil))
+        (multiple-value-bind (ignored server-records)
+            (%call-with-https-server
+             "callback-error"
+             (lambda (port)
+               (let ((client
+                      (%make-test-http-client
+                       (lambda (request attempt)
+                         (declare (ignore request attempt))
+                         (incf request-count)))))
+                 (setf subscription
+                       (sse-kit/http-kit-client:subscribe-http-sse
+                        (format nil "https://127.0.0.1:~D/events" port)
+                        (lambda (event)
+                          (declare (ignore event))
+                          (incf event-count)
+                          (unless (cl-concurrent-kit:wait-on-semaphore
+                                   callback-release :timeout 5)
+                            (error "The parser callback was not released."))
+                          (sse-kit/http-kit-client:stop-http-sse-subscription
+                           subscription :test-stop-before-error)
+                          (error "callback failed after stop"))
+                        :http-client client
+                        :retry-policy (%test-retry-policy)
+                        :on-error (lambda (condition)
+                                    (declare (ignore condition))
+                                    (incf error-count))
+                        :on-retry (lambda (delay condition)
+                                    (declare (ignore delay condition))
+                                    (incf retry-count))))
+                 (cl-concurrent-kit:signal-semaphore callback-release)
+                 (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                          subscription :timeout 5)
+                   (sse-kit/http-kit-client:stop-http-sse-subscription
+                    subscription :test-timeout)
+                   (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+                            subscription :timeout 5)
+                     (error "The stopped subscription did not finish."))
+                   (error "The stopped subscription did not finish."))
+                 t)))
+          (declare (ignore ignored))
+          (setf records server-records))
+        (expect event-count :to-equalp 1)
+        (expect error-count :to-equalp 0)
+        (expect retry-count :to-equalp 0)
+        (expect request-count :to-equalp 1)
+        (expect (length records) :to-equalp 1)
+        (expect (sse-kit/http-kit-client:http-sse-subscription-stopped-p
+                 subscription)
+                :to-equalp t)
+        (expect (sse-kit/http-kit-client:http-sse-subscription-error
+                 subscription)
+                :to-equalp nil)
+        (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
+                 subscription)
+                :to-equalp t)))
   (it "does not retry a parser line size-limit error"
     (multiple-value-bind
         (events errors request-count retry-count records subscription)

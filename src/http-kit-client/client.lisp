@@ -69,6 +69,17 @@
     (setf (%subscription-error subscription) condition))
   condition)
 
+(defun %record-subscription-error (subscription condition)
+  (cl-concurrent-kit:with-lock-held
+      ((%subscription-lock subscription))
+    (cond
+      ((eq (%subscription-error subscription) condition) t)
+      ((or (%subscription-stopped-p subscription)
+           (%subscription-error subscription)) nil)
+      (t
+       (setf (%subscription-error subscription) condition)
+       t))))
+
 (defun stop-http-sse-subscription (subscription &optional (reason :stopped))
   "Stop the subscription, cancel its active request, and wake retry waits.
 
@@ -318,9 +329,11 @@ Transport cancellation latency depends on the active protocol."
                                            (unless (%subscription-stopped-p* subscription)
                                              (%sync-parser-state subscription parser)))
                                        (error (condition)
-                                         (setf response-kind :parser-error
-                                               response-condition condition)
-                                         (error condition))))))))
+                                         (when (%record-subscription-error
+                                                subscription condition)
+                                           (setf response-kind :parser-error
+                                                 response-condition condition)
+                                           (error condition)))))))))
                           (when timeout-p
                             (setf options
                                   (append options
@@ -436,6 +449,7 @@ Transport cancellation latency depends on the active protocol."
                   (setf callback-condition
                         (%subscription-callback-error-condition
                          callback-error))
+                  (%record-subscription-error subscription callback-condition)
                   (stop-http-sse-subscription
                    subscription :event-callback-error))))))
          (response nil))
@@ -450,29 +464,29 @@ Transport cancellation latency depends on the active protocol."
                    (eq (http-kit:http-error-operation condition) :redirect))
               (typep condition (quote sse-kit:sse-error)))
               (progn
-                (%set-subscription-error subscription condition)
-                (unwind-protect
-                     (when (%subscription-on-error subscription)
-                       (funcall (%subscription-on-error subscription)
-                                condition))
-                  (stop-http-sse-subscription
-                    subscription
-                    (cond
-                      ((and (typep condition (quote http-kit/client:http-client-error))
-                            (eq (http-kit:http-error-operation condition) :redirect))
-                       :redirect-policy-error)
-                      ((typep condition (quote sse-kit:sse-http-error))
-                       :invalid-response)
-                      (t :parser-error))))
+                (when (%record-subscription-error subscription condition)
+                  (unwind-protect
+                       (when (%subscription-on-error subscription)
+                         (funcall (%subscription-on-error subscription)
+                                  condition))
+                    (stop-http-sse-subscription
+                     subscription
+                     (cond
+                       ((and (typep condition (quote http-kit/client:http-client-error))
+                             (eq (http-kit:http-error-operation condition) :redirect))
+                        :redirect-policy-error)
+                       ((typep condition (quote sse-kit:sse-http-error))
+                        :invalid-response)
+                       (t :parser-error)))))
                 (return-from %perform-subscription-attempt
                   (values condition t)))
               (return-from %perform-subscription-attempt
                 (values condition nil))))))
     (when callback-condition
-      (%set-subscription-error subscription callback-condition)
-      (when (%subscription-on-error subscription)
-        (funcall (%subscription-on-error subscription)
-                 callback-condition))
+      (when (%record-subscription-error subscription callback-condition)
+        (when (%subscription-on-error subscription)
+          (funcall (%subscription-on-error subscription)
+                   callback-condition)))
       (return-from %perform-subscription-attempt
         (values callback-condition t)))
     (when (%subscription-stopped-p* subscription)
@@ -495,10 +509,11 @@ Transport cancellation latency depends on the active protocol."
                (setf (sse-kit:http-sse-client-retry-attempt protocol-client) 0)
                (values (%make-disconnected-condition) nil))
            (error (condition)
-             (%set-subscription-error subscription condition)
              (unwind-protect
-                  (when (%subscription-on-error subscription)
-                    (funcall (%subscription-on-error subscription) condition))
+                  (when (%record-subscription-error subscription condition)
+                    (when (%subscription-on-error subscription)
+                      (funcall (%subscription-on-error subscription)
+                               condition)))
                (stop-http-sse-subscription subscription :parser-error))
              (values condition t))))))))
 (defun %make-subscription-parser (protocol-client on-event)
