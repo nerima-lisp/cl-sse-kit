@@ -7,6 +7,12 @@
 - Treat cross-origin redirects as terminal errors when the client configures
   an `auth-provider`.
 
+### Fixed
+
+- Follow the HTML Standard by committing `Last-Event-ID` when an event block is
+  dispatched. The `http-sse-parser-last-event-id` accessor now reflects an
+  `id` line at dispatch time, rather than when the line is read.
+
 ## 1.0.0
 
 First stable release.
