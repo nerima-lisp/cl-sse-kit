@@ -219,10 +219,102 @@ triggered the notification. `:on-event` remains part of the body-processing
 operation, so its conditions propagate through `feed-http-sse-client` and the
 corresponding read/consume operation.
 
+## cl-http-kit client integration
+
+The optional `cl-sse-kit/http-kit-client` ASDF system runs subscriptions over
+the public `cl-http-kit/client` API. Load it separately from `cl-sse-kit` and
+pass in the HTTP client you configured for your application:
+
+```lisp
+(asdf:load-system "cl-sse-kit/http-kit-client")
+
+(let ((subscription
+        (sse-kit/http-kit-client:subscribe-http-sse
+         "https://events.example.test/stream"
+         #'handle-event
+         :http-client http-client
+         :retry-policy retry-policy
+         :on-error #'handle-error
+         :on-retry (lambda (delay condition)
+                     (declare (ignore condition))
+                     (format *trace-output* "Retrying in ~,3F seconds.~%"
+                             delay)))))
+  subscription)
+```
+
+Store the returned handle in application state. When the application is ready
+to stop the subscription, call `stop-http-sse-subscription` and then
+`wait-http-sse-subscription` with that handle.
+
+`subscribe-http-sse` returns immediately and calls `handle-event` on its worker
+thread. It reuses the supplied HTTP client for reconnects, retaining that
+client's cookie jar, proxy, TLS, timeout, response-size, and redirect-policy
+settings. The adapter follows permitted redirect hops. Redirect response
+bodies are not sent to the SSE parser.
+The adapter respects the retry policy's attempt limit by default. Set
+`:retry-forever-p t` to opt into retries beyond that limit when the policy still
+classifies a condition as retryable.
+If `handle-event` signals an error, the worker stops without retrying. The
+condition is passed to `on-error` and returned by
+`http-sse-subscription-error`; the event ID is committed only after the
+callback returns successfully.
+The callback adapter configures its parser with `:collect-events-p nil`: each
+event is sent to the callback, and the parser keeps no event history. The
+parser's per-response limits are fixed at 10,000 dispatched events and 64 MiB
+of input bytes; `subscribe-http-sse` does not expose overrides.
+These parser limits are independent of the HTTP client's `:max-body-bytes`
+setting. The client can impose a lower response body limit, while a higher client
+limit does not raise the parser's 64 MiB cap. Crossing a parser limit raises
+`sse-size-limit-exceeded`; `on-error` receives the condition and the retry
+policy decides whether to reconnect.
+The `:timeout` keyword passed to `subscribe-http-sse` overrides the per-request
+timeout; pass `NIL` to remove the relative timeout for a request. Without it,
+the HTTP client's default timeout applies. `:max-body-bytes` applies to the full
+response even though the adapter streams chunks without collecting them. Choose
+a limit based on the stream's expected duration.
+
+The response-headers callback disables cl-http-kit's automatic redirect
+handling, so the adapter follows redirects itself using the client's configured
+redirect statuses and maximum. It applies HSTS upgrades from the client's
+strict-transport store and rejects HTTPS-to-HTTP redirects unless the redirect
+policy allows downgrades. SSE
+requests stay `GET` for 301, 302, 303, 307, and 308 responses. Before each hop,
+the adapter removes explicit `Cookie` and `Proxy-Authorization` headers so the
+client can apply its cookie jar and proxy rules. On cross-origin hops it also
+removes `Authorization` and all client default headers, including custom
+authentication headers. Each redirect response finishes before the next request
+so the client's cookie jar can process its `Set-Cookie` headers. If the client
+has an `auth-provider`, a cross-origin redirect ends with an error because a
+separate send for the new origin would otherwise invoke that provider again.
+
+After redirects finish, the adapter validates the final response status and
+`Content-Type` in the response-headers callback, before passing any body chunk to
+the SSE parser. It accepts only a 200 response with a valid
+`text/event-stream` content type. A 204 response with a valid event-stream
+content type ends the subscription without reconnecting. Other statuses and
+invalid content types, including an invalid 204, are cancelled before parsing,
+reported through `on-error`, and finish the subscription without reconnecting.
+Redirect-policy failures are reported through `on-error` and finish without
+reconnecting. Network errors, such as a dropped connection or a response that
+ends early, remain subject to the configured retry policy.
+
+`stop-http-sse-subscription` cancels the active request with a fresh
+cl-http-kit cancellation token and wakes a worker waiting to reconnect. Stop
+latency depends on the transport: stopping an active request on the built-in
+HTTP/3 transport may signal an unsupported-cancellation error, and cancellation
+is otherwise unsupported there. An HTTP/2 or HTTP/3 request waiting on a blocked
+frame read may wait for data or its deadline before the worker exits. Passing
+`:timeout NIL` removes that request deadline, so a blocked HTTP/2 or HTTP/3 read
+has no finite stop bound.
+See the pinned [cl-http-kit client API reference](https://github.com/nerima-lisp/cl-http-kit/blob/v0.5.0/docs/src/reference/api.md)
+for the request timeout and cancellation details. `wait-http-sse-subscription`
+returns the subscription when the worker has finished and `NIL` if its own
+optional `:timeout` expires.
+
 ## Transport adapter checklist
 
-Integrations stop at the HTTP message and byte-stream boundary.
-An adapter that connects it to a web server or HTTP client should:
+The core protocol APIs stop at the HTTP message and byte-stream boundary. A
+custom adapter that connects them to a web server or HTTP client should:
 
 1. Validate incoming metadata with `validate-http-sse-request` before creating a
    session.

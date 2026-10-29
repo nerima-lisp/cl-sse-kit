@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0
+
+- Add a `cl-http-kit` client adapter for URL-based Server-Sent Events
+  subscriptions, with redirect handling, cancellation, and reconnection.
+- Treat cross-origin redirects as terminal errors when the client configures
+  an `auth-provider` or a `challenge-auth-provider`.
+
+### Fixed
+
+- Follow the HTML Standard by committing `Last-Event-ID` when an event block is
+  dispatched. The `http-sse-parser-last-event-id` accessor now reflects an
+  `id` line at dispatch time, rather than when the line is read.
+
 ## 1.0.0
 
 First stable release.

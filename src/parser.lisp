@@ -4,7 +4,7 @@
              (:constructor %make-sse-state
                  (&key max-events max-line-bytes max-data-bytes max-comments
                        max-comment-bytes max-input-bytes on-event
-                       collect-events-p last-event-id)))
+                       collect-events-p last-event-id last-event-id-buffer)))
   max-events
   max-line-bytes
   max-data-bytes
@@ -21,6 +21,7 @@
   (comments nil)
   (comment-bytes 0)
   (last-event-id "")
+  (last-event-id-buffer "")
   (retry-time nil)
   (line (make-array 0
                     :element-type '(unsigned-byte 8)
@@ -59,7 +60,8 @@
    :max-input-bytes max-input-bytes
    :on-event on-event
    :collect-events-p collect-events-p
-   :last-event-id initial-last-event-id))
+   :last-event-id initial-last-event-id
+   :last-event-id-buffer initial-last-event-id))
 
 (defun %sse-state-reset-event (state)
   (setf (%sse-state-event-field state) nil
@@ -101,6 +103,8 @@
   state)
 
 (defun %sse-state-dispatch (state)
+  (setf (%sse-state-last-event-id state)
+        (%sse-state-last-event-id-buffer state))
   (if (consp (%sse-state-data-lines state))
       (progn
         (when (and (%sse-state-max-events state)
@@ -200,7 +204,7 @@
          (unless (find #x00 value-octets)
            (let ((id (%sse-utf8-string value-octets)))
              (setf (%sse-state-id-field state) id
-                   (%sse-state-last-event-id state) id))))
+                   (%sse-state-last-event-id-buffer state) id))))
         ((string= field "retry")
          (let ((retry (%sse-parse-retry value-octets)))
            (when retry
