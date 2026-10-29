@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0
+
+- Add a `cl-http-kit` client adapter for URL-based Server-Sent Events
+  subscriptions, with redirect handling, cancellation, and reconnection.
+- Treat cross-origin redirects as terminal errors when the client configures
+  an `auth-provider`.
+
 ## 1.0.0
 
 First stable release.

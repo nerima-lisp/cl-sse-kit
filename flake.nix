@@ -17,13 +17,13 @@
     };
 
     cl-hpack-codec-kit = {
-      url = "github:nerima-lisp/cl-hpack-codec-kit/v1.1.2";
+      url = "github:nerima-lisp/cl-hpack-codec-kit/08bc4c9ff1bcedb0624ad65d567a5e2d213b7ab9";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-weave.follows = "cl-weave";
     };
 
     cl-http-kit = {
-      url = "github:nerima-lisp/cl-http-kit/d332c596075af799a0d8ed908293c7477cb43f70";
+      url = "github:nerima-lisp/cl-http-kit/v0.5.0";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-weave.follows = "cl-weave";
       inputs.cl-http-message-kit.follows = "cl-http-message-kit";
@@ -46,7 +46,7 @@
     };
 
     cl-crypto-kit = {
-      url = "github:nerima-lisp/cl-crypto-kit/main";
+      url = "github:nerima-lisp/cl-crypto-kit/761e95926923eba809f3e5deac88e68414aef894";
       flake = false;
     };
 
@@ -58,7 +58,7 @@
     };
 
     cl-quic-kit = {
-      url = "github:nerima-lisp/cl-quic-kit/v0.2.7";
+      url = "github:nerima-lisp/cl-quic-kit/16d6f5987ae8ff75342cfd4d5085c6b936104e96";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-crypto-kit.follows = "cl-crypto-kit";
       inputs.cl-tls-kit.follows = "cl-tls-kit";
@@ -75,7 +75,7 @@
     cl-host-kit.follows = "cl-resilience-kit/cl-boundary-kit/cl-host-kit";
 
     cl-weave = {
-      url = "github:nerima-lisp/cl-weave/v1.3.0";
+      url = "github:nerima-lisp/cl-weave/v1.5.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -123,7 +123,7 @@
         system: pkgs: {
           default = pkgs.stdenvNoCC.mkDerivation {
             pname = "cl-sse-kit";
-            version = "1.0.0";
+            version = "1.1.0";
             src = self;
             dontBuild = true;
             installPhase = ''

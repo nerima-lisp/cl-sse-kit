@@ -4,7 +4,7 @@
   :description "HTTP Server-Sent Events parser, serializer, session, publisher, and client protocol state."
   :author "nerima-lisp"
   :license "MIT"
-  :version "1.0.0"
+  :version "1.1.0"
   :depends-on ("cl-codec-kit"
                "cl-http-message-kit"
                "cl-resilience-kit")
@@ -45,7 +45,7 @@
   :description "An HTTP client integration for cl-sse-kit using cl-http-kit/client."
   :author "nerima-lisp"
   :license "MIT"
-  :version "1.0.0"
+  :version "1.1.0"
   :depends-on ("cl-sse-kit" "cl-http-kit/client" "cl-concurrent-kit")
   :pathname "src/http-kit-client"
   :serial t

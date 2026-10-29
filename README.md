@@ -306,7 +306,7 @@ is otherwise unsupported there. An HTTP/2 or HTTP/3 request waiting on a blocked
 frame read may wait for data or its deadline before the worker exits. Passing
 `:timeout NIL` removes that request deadline, so a blocked HTTP/2 or HTTP/3 read
 has no finite stop bound.
-See the pinned [cl-http-kit client API reference](https://github.com/nerima-lisp/cl-http-kit/blob/d332c596075af799a0d8ed908293c7477cb43f70/docs/src/reference/api.md)
+See the pinned [cl-http-kit client API reference](https://github.com/nerima-lisp/cl-http-kit/blob/v0.5.0/docs/src/reference/api.md)
 for the request timeout and cancellation details. `wait-http-sse-subscription`
 returns the subscription when the worker has finished and `NIL` if its own
 optional `:timeout` expires.
