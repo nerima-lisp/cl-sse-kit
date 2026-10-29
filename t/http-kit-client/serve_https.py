@@ -65,6 +65,9 @@ responses = {
     "callback-error": [
         (200, "text/event-stream", b"data: callback\nid: callback-id\n\n", []),
     ],
+    "callback-error-final-cr": [
+        (200, "text/event-stream", b"data: x\r\r", []),
+    ],
 }
 
 redirect_statuses = {

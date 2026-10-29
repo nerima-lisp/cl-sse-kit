@@ -645,6 +645,68 @@
       (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
                subscription)
               :to-equalp t)))
+  (it "reports callback errors raised while finishing the parser"
+    (let ((subscription nil)
+          (callback-dispatched (cl-concurrent-kit:make-semaphore))
+          (error-received (cl-concurrent-kit:make-semaphore))
+          (callback-count 0)
+          (reported-condition nil)
+          (error-count 0)
+          (retry-count 0)
+          (request-count 0)
+          (records nil))
+      (multiple-value-bind (ignored server-records)
+          (%call-with-https-server
+           "callback-error-final-cr"
+           (lambda (port)
+             (let ((client
+                     (%make-test-http-client
+                      (lambda (request attempt)
+                        (declare (ignore request attempt))
+                        (incf request-count)))))
+               (setf subscription
+                     (sse-kit/http-kit-client:subscribe-http-sse
+                      (format nil "https://127.0.0.1:~D/events" port)
+                      (lambda (event)
+                        (declare (ignore event))
+                        (incf callback-count)
+                        (cl-concurrent-kit:signal-semaphore callback-dispatched)
+                        (error "callback failed while finishing"))
+                      :http-client client
+                      :retry-policy (%test-retry-policy)
+                      :on-error (lambda (condition)
+                                  (setf reported-condition condition)
+                                  (incf error-count)
+                                  (cl-concurrent-kit:signal-semaphore
+                                   error-received))
+                      :on-retry (lambda (delay condition)
+                                  (declare (ignore delay condition))
+                                  (incf retry-count))))
+               t)))
+        (declare (ignore ignored))
+        (setf records server-records))
+      (unless (cl-concurrent-kit:wait-on-semaphore
+               callback-dispatched :timeout 5)
+        (error "The event callback was not dispatched while finishing."))
+      (unless (cl-concurrent-kit:wait-on-semaphore
+               error-received :timeout 5)
+        (error "The finish-time callback error was not reported."))
+      (unless (sse-kit/http-kit-client:wait-http-sse-subscription
+               subscription :timeout 5)
+        (error "The subscription worker did not finish."))
+      (expect callback-count :to-equalp 1)
+      (expect request-count :to-equalp 1)
+      (expect retry-count :to-equalp 0)
+      (expect error-count :to-equalp 1)
+      (expect (length records) :to-equalp 1)
+      (expect (typep reported-condition (quote simple-error)) :to-equalp t)
+      (expect (eq (sse-kit/http-kit-client:http-sse-subscription-error
+                   subscription)
+                  reported-condition)
+              :to-equalp t)
+      (expect (sse-kit/http-kit-client:http-sse-subscription-finished-p
+               subscription)
+              :to-equalp t)))
   (it "does not report a parser callback error after stop wins"
       (let ((subscription nil)
             (callback-release (cl-concurrent-kit:make-semaphore))
