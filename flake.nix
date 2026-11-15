@@ -23,7 +23,7 @@
     };
 
     cl-http-kit = {
-      url = "github:nerima-lisp/cl-http-kit/v0.5.0";
+      url = "github:nerima-lisp/cl-http-kit/v0.5.1";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.cl-weave.follows = "cl-weave";
       inputs.cl-http-message-kit.follows = "cl-http-message-kit";
@@ -69,7 +69,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # cl-http-kit v0.5.0 still needs these packages for its test and dev outputs.
+    # cl-http-kit v0.5.1 still needs these packages for its test and dev outputs.
     cl-boundary-kit = {
       url = "github:nerima-lisp/cl-boundary-kit/v2.3.0";
       inputs.nixpkgs.follows = "nixpkgs";
