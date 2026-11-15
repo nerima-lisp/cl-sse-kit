@@ -65,14 +65,18 @@
     };
 
     cl-resilience-kit = {
-      url = "github:nerima-lisp/cl-resilience-kit/v1.0.0";
+      url = "github:nerima-lisp/cl-resilience-kit/v2.0.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    cl-boundary-kit.follows = "cl-resilience-kit/cl-boundary-kit";
+    # cl-http-kit v0.5.0 still needs these packages for its test and dev outputs.
+    cl-boundary-kit = {
+      url = "github:nerima-lisp/cl-boundary-kit/v2.3.0";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     cl-concurrent-kit.follows = "cl-resilience-kit/cl-concurrent-kit";
     cl-date-kit.follows = "cl-resilience-kit/cl-date-kit";
-    cl-host-kit.follows = "cl-resilience-kit/cl-boundary-kit/cl-host-kit";
+    cl-host-kit.follows = "cl-boundary-kit/cl-host-kit";
 
     cl-weave = {
       url = "github:nerima-lisp/cl-weave/v1.5.0";
@@ -123,7 +127,7 @@
         system: pkgs: {
           default = pkgs.stdenvNoCC.mkDerivation {
             pname = "cl-sse-kit";
-            version = "1.1.0";
+            version = "1.2.0";
             src = self;
             dontBuild = true;
             installPhase = ''
